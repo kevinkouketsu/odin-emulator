@@ -1,0 +1,13 @@
+[package]
+name = "odin-loginserver"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0"
+futures = "0.3"
+tarpc = { version = "0.33", features = ["tokio1", "tcp", "serde-transport", "serde-transport-json"] }
+tokio = { version = "1.0", features = ["macros"] }
+

@@ -17,4 +17,5 @@ thiserror = "1.0.50"
 [workspace]
 members = [
     "odin-networking",
+    "odin-loginserver",
 ]
