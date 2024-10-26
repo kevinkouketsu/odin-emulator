@@ -1,3 +1,5 @@
+pub const HANDSHAKE_VALUE: u32 = 0x1F11F311;
+
 #[derive(Default)]
 pub struct FramedMessage {
     cache: Vec<u8>,
@@ -27,9 +29,37 @@ impl FramedMessage {
     }
 }
 
+#[derive(Default)]
+pub enum HandshakeState {
+    #[default]
+    Handshaking,
+    Done(FramedMessage),
+}
+impl HandshakeState {
+    pub fn update(&mut self, data: &[u8]) {
+        match self {
+            HandshakeState::Handshaking => {
+                match u32::from_le_bytes(data.try_into().unwrap()) == HANDSHAKE_VALUE {
+                    true => *self = HandshakeState::Done(Default::default()),
+                    false => {}
+                }
+            }
+            HandshakeState::Done(framed_message) => framed_message.update(data),
+        }
+    }
+
+    pub fn next_message(&mut self) -> Option<Vec<u8>> {
+        match self {
+            HandshakeState::Handshaking => None,
+            HandshakeState::Done(framed_message) => framed_message.next_message(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deku::prelude::*;
 
     #[test]
     fn two_first_bytes_are_the_length() {
@@ -70,5 +100,43 @@ mod tests {
         framed_message.update(&[0]);
 
         assert!(framed_message.next_message().is_some());
+    }
+
+    #[test]
+    fn receiving_valid_handshake_updates_current_state() {
+        let mut state = HandshakeState::default();
+
+        state.update(&u32::to_le_bytes(HANDSHAKE_VALUE));
+        match state {
+            HandshakeState::Handshaking => panic!("Invalid state, expected Done"),
+            HandshakeState::Done(_) => {}
+        }
+    }
+
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, DekuWrite, DekuRead)]
+    struct PayloadTest(#[deku(bytes = 4)] u32);
+
+    #[test]
+    fn ignore_packet_until_it_receives_the_handshake_packet() {
+        let mut state = HandshakeState::default();
+
+        let payload_test = PayloadTest(1);
+        state.update(&payload_test.to_bytes().unwrap());
+        assert!(state.next_message().is_none());
+        state.update(&u32::to_le_bytes(HANDSHAKE_VALUE));
+
+        // Prefix the message with the size
+        state.update(&u16::to_le_bytes(
+            (std::mem::size_of::<PayloadTest>() + std::mem::size_of::<u16>()) as u16,
+        ));
+
+        // Put the actually message
+        state.update(&payload_test.to_bytes().unwrap());
+
+        let message = state.next_message().unwrap();
+        assert_eq!(
+            PayloadTest::from_bytes((&message[2..], 0)).unwrap().1,
+            payload_test
+        );
     }
 }

@@ -1,0 +1,8 @@
+[package]
+name = "odin-repositories"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+odin-models = { path = "../odin-models" }
+thiserror = "1.0.65"

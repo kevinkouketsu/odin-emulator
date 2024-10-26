@@ -66,32 +66,46 @@ impl EncDecSession {
         assert_eq!(data.len(), header.size as usize);
 
         let keyword = header.keyword;
-        let mut pos = self.keytable[keyword.wrapping_mul(2) as usize];
+        let mut pos = self.keytable[keyword.wrapping_mul(2) as usize] as usize;
 
-        let mut checksum: [u8; 2] = [0; 2];
+        let mut checksum: [i32; 2] = [0; 2];
         (4..data.len()).for_each(|i| {
-            let key = self.keytable[(pos.wrapping_mul(2).wrapping_add(1)) as usize];
-            checksum[0] = checksum[0].wrapping_add(data[i]);
+            let key = self.keytable[(pos & 255).wrapping_mul(2).wrapping_add(1)] as i32;
+            let encoded = data[i] as i8;
 
-            let encoded = data[i];
+            checksum[0] += encoded as i32;
+            let key_after: i8;
             let decoded = match i & 3 {
-                0 => encoded.wrapping_sub(key.wrapping_shr(1)),
-                1 => encoded.wrapping_add(key.wrapping_shl(3)),
-                2 => encoded.wrapping_sub(key.wrapping_shr(2)),
-                3 => encoded.wrapping_add(key.wrapping_shl(5)),
+                0 => {
+                    key_after = (key.wrapping_shl(1) & 255) as _;
+                    encoded.wrapping_sub(key_after)
+                }
+                1 => {
+                    key_after = (key.wrapping_shr(3) & 255) as _;
+                    encoded.wrapping_add(key_after)
+                }
+                2 => {
+                    key_after = (key.wrapping_shl(2) & 255) as _;
+                    encoded.wrapping_sub(key_after)
+                }
+                3 => {
+                    key_after = (key.wrapping_shr(5) & 255) as _;
+                    encoded.wrapping_add(key_after)
+                }
                 _ => unreachable!(),
             };
 
-            data[i] = decoded;
-            checksum[1] = checksum[1].wrapping_add(decoded);
-
-            pos = pos.wrapping_add(1);
+            data[i] = decoded as u8;
+            checksum[1] += decoded as i32;
+            pos += 1;
         });
 
-        let checksum = checksum[0].wrapping_sub(checksum[1]);
-        match checksum == header.checksum {
+        match (checksum[1].wrapping_sub(checksum[0]) & 255) as u8 != header.checksum {
             true => Ok(()),
-            false => Err(DecryptError::InvalidChecksum(checksum, header.checksum)),
+            false => Err(DecryptError::InvalidChecksum(
+                (checksum[0] & 255) as u8,
+                header.checksum,
+            )),
         }
     }
 }
@@ -108,7 +122,7 @@ pub enum DecryptError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{messages::MessageIdentifier, ReadableResource, ReadableResourceError};
+    use crate::{messages::MessageIdentifier, WritableResourceError};
 
     #[derive(Debug, Clone, PartialEq, Eq, DekuWrite, DekuRead)]
     struct PayloadTest {
@@ -119,15 +133,8 @@ mod tests {
         const IDENTIFIER: MessageIdentifier = MessageIdentifier::Login;
         type Output = PayloadTest;
 
-        fn write(self) -> Self::Output {
-            self
-        }
-    }
-    impl ReadableResource for PayloadTest {
-        type Output = PayloadTest;
-
-        fn read(self, data: &[u8]) -> Result<Self::Output, ReadableResourceError> {
-            Ok(PayloadTest::from_bytes((data, 0))?.1)
+        fn write(self) -> Result<Self::Output, WritableResourceError> {
+            Ok(self)
         }
     }
 
