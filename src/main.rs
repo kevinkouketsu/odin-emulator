@@ -165,7 +165,7 @@ impl GameServer {
                                 Err(e) => {
                                     log::error!("Fail to decrypt packet: {:?}", e);
 
-                                    return;
+                                    continue;
                                 }
                             };
 
@@ -186,7 +186,7 @@ impl GameServer {
                                         header
                                     );
 
-                                    return;
+                                    continue;
                                 }
                                 Err(MessageError::NotRecognized(header)) => {
                                     log::error!(
@@ -194,11 +194,11 @@ impl GameServer {
                                         header
                                     );
 
-                                    return;
+                                    continue;
                                 }
                                 Err(err) => {
                                     log::error!("Invalid packet received: {:?}", err);
-                                    return;
+                                    continue;
                                 }
                             };
 
