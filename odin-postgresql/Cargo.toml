@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+chrono = "0.4.38"
 futures = "0.3.28"
-migration = { path = "migration" }
 odin-models = { path = "../odin-models" }
 odin-repositories = { path = "../odin-repositories" }
-sea-orm = { version = "^0.12.0", features = [ "sqlx-postgres", "runtime-tokio-native-tls", "macros" ] }
+entity = { path = "./entity" }
+sea-orm = { version = "^1.1.0", features = [ "sqlx-postgres", "runtime-tokio-native-tls", "macros", "with-chrono"] }
 thiserror = "1.0.65"

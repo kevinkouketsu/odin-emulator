@@ -39,9 +39,15 @@ impl HandshakeState {
     pub fn update(&mut self, data: &[u8]) {
         match self {
             HandshakeState::Handshaking => {
-                match u32::from_le_bytes(data.try_into().unwrap()) == HANDSHAKE_VALUE {
-                    true => *self = HandshakeState::Done(Default::default()),
-                    false => {}
+                for data in data.windows(4).filter_map(|val| match val.try_into() {
+                    Ok(value) => Some(value),
+                    Err(_) => None,
+                }) {
+                    let value: [u8; 4] = data;
+                    match u32::from_le_bytes(value) == HANDSHAKE_VALUE {
+                        true => *self = HandshakeState::Done(Default::default()),
+                        false => {}
+                    }
                 }
             }
             HandshakeState::Done(framed_message) => framed_message.update(data),
@@ -114,13 +120,13 @@ mod tests {
     }
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq, DekuWrite, DekuRead)]
-    struct PayloadTest(#[deku(bytes = 4)] u32);
+    struct PayloadTest(u32, u32);
 
     #[test]
     fn ignore_packet_until_it_receives_the_handshake_packet() {
         let mut state = HandshakeState::default();
 
-        let payload_test = PayloadTest(1);
+        let payload_test = PayloadTest(1, 1);
         state.update(&payload_test.to_bytes().unwrap());
         assert!(state.next_message().is_none());
         state.update(&u32::to_le_bytes(HANDSHAKE_VALUE));
@@ -137,6 +143,55 @@ mod tests {
         assert_eq!(
             PayloadTest::from_bytes((&message[2..], 0)).unwrap().1,
             payload_test
+        );
+    }
+
+    #[test]
+    fn it_iterates_four_bytes_until_end_of_buffer() {
+        let mut state = HandshakeState::default();
+
+        let payload_test = PayloadTest(1, 1);
+        let mut buffer = payload_test.to_bytes().unwrap();
+        buffer.extend_from_slice(&u32::to_le_bytes(HANDSHAKE_VALUE));
+        state.update(&buffer);
+
+        // Prefix the message with the size
+        state.update(&u16::to_le_bytes(
+            (std::mem::size_of::<PayloadTest>() + std::mem::size_of::<u16>()) as u16,
+        ));
+
+        // Put the actually message
+        state.update(&PayloadTest(1, 2).to_bytes().unwrap());
+
+        let message = state.next_message().unwrap();
+        assert_eq!(
+            PayloadTest::from_bytes((&message[2..], 0)).unwrap().1,
+            PayloadTest(1, 2)
+        );
+    }
+
+    #[test]
+    fn it_iterates_a_window_of_four_bytes_until_end_of_buffer() {
+        let mut state = HandshakeState::default();
+
+        let payload_test = PayloadTest(1, 1);
+        let mut buffer = payload_test.to_bytes().unwrap();
+        buffer.extend_from_slice(&[0, 1]);
+        buffer.extend_from_slice(&u32::to_le_bytes(HANDSHAKE_VALUE));
+        state.update(&buffer);
+
+        // Prefix the message with the size
+        state.update(&u16::to_le_bytes(
+            (std::mem::size_of::<PayloadTest>() + std::mem::size_of::<u16>()) as u16,
+        ));
+
+        // Put the actually message
+        state.update(&PayloadTest(1, 2).to_bytes().unwrap());
+
+        let message = state.next_message().unwrap();
+        assert_eq!(
+            PayloadTest::from_bytes((&message[2..], 0)).unwrap().1,
+            PayloadTest(1, 2)
         );
     }
 }

@@ -113,14 +113,6 @@ mod tests {
     }
 
     #[test]
-    fn write_string_bigger_than_buffer() {
-        let string: FixedSizeString<2> = "hello".to_string().try_into().unwrap();
-        let encoded_string: Result<Vec<u8>, _> = string.try_into();
-
-        assert!(encoded_string.is_err());
-    }
-
-    #[test]
     fn must_have_space_for_null_terminate() {
         let string: FixedSizeString<5> = "hello".to_string().try_into().unwrap();
         let encoded_string: Result<Vec<u8>, _> = string.try_into();

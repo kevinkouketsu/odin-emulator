@@ -1,6 +1,5 @@
-use std::{future::Future, pin::Pin};
-
 use odin_models::account::Account;
+use std::{future::Future, pin::Pin};
 use thiserror::Error;
 
 pub trait AccountRepository: Clone {
@@ -13,6 +12,12 @@ pub trait AccountRepository: Clone {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum AccountRepositoryError {
-    #[error("The username or password is not valid")]
-    InvalidUsernameOrPassword,
+    #[error("The username is not valid")]
+    InvalidUsername,
+
+    #[error("The password is not valid")]
+    InvalidPassword,
+
+    #[error("Fail to load account: {0}")]
+    FailToLoad(String),
 }

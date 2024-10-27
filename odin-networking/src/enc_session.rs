@@ -1,4 +1,4 @@
-use crate::{messages::header::Header, WritableResource};
+use crate::{messages::header::Header, WritableResource, WritableResourceError};
 use bytes::Bytes;
 use deku::prelude::*;
 use rand::Rng;
@@ -18,50 +18,54 @@ impl EncDecSession {
         Self { keytable, id }
     }
 
-    pub fn encrypt<R: WritableResource>(&self, data: &[u8]) -> Result<Bytes, DecryptError> {
+    pub fn encrypt<R: WritableResource>(&self, data: R) -> Result<Bytes, EncDecError> {
         let mut rng = rand::thread_rng();
         let keyword_index = rng.gen_range::<u8, _>(0u8..HALF_KEYTABLE_LENGTH as u8);
+        let client_id = match data.client_id() {
+            Some(client_id) => client_id,
+            None => self.id,
+        };
         let header = Header {
-            size: (std::mem::size_of::<R::Output>() + std::mem::size_of::<Header>()) as u16,
+            size: (R::SIZE as usize + std::mem::size_of::<Header>()) as u16,
             keyword: keyword_index,
             checksum: 0,
-            typ: R::IDENTIFIER as u16,
-            id: self.id,
+            typ: u16::try_from(R::IDENTIFIER).expect("Message identifier must be valid"),
+            id: client_id,
             tick: 0,
         };
 
         let mut header: Vec<u8> = header.try_into()?;
-        header.extend_from_slice(data);
+        let data = data.write()?.to_bytes()?;
+        header.extend(data);
 
         let keyword = self.keytable[keyword_index.wrapping_mul(2) as usize];
         let mut data = header;
-        let mut checksum: [u8; 2] = [0; 2];
-        let mut key_increment = keyword;
+        let mut checksum: [i8; 2] = [0; 2];
+        let mut key_increment = keyword as usize;
         (4..data.len()).for_each(|i| {
-            let key = self.keytable[(key_increment.wrapping_mul(2).wrapping_add(1)) as usize];
+            let key = self.keytable[(key_increment & 255).wrapping_mul(2).wrapping_add(1)];
 
-            let old_data = data[i];
+            checksum[0] = checksum[0].wrapping_add(data[i] as i8);
+            let encoded = data[i] as i8;
             let result = match i & 3 {
-                0 => old_data.wrapping_add(key.wrapping_shr(1)),
-                1 => old_data.wrapping_sub(key.wrapping_shl(3)),
-                2 => old_data.wrapping_add(key.wrapping_shr(2)),
-                3 => old_data.wrapping_sub(key.wrapping_shl(5)),
+                0 => encoded.wrapping_add(key.wrapping_shl(1) as i8),
+                1 => encoded.wrapping_sub(key.wrapping_shr(3) as i8),
+                2 => encoded.wrapping_add(key.wrapping_shl(2) as i8),
+                3 => encoded.wrapping_sub(key.wrapping_shr(5) as i8),
                 _ => unreachable!(),
-            } as u8;
+            };
 
-            data[i] = result;
-
-            checksum[0] = checksum[0].wrapping_add(old_data);
-            checksum[1] = checksum[1].wrapping_add(data[i]);
-            key_increment = key_increment.wrapping_add(1);
+            data[i] = result as u8;
+            checksum[1] = checksum[1].wrapping_add(result as i8);
+            key_increment += 1;
         });
 
-        data[3] = checksum[1].wrapping_sub(checksum[0]);
+        data[3] = (checksum[1].wrapping_sub(checksum[0])) as u8;
 
         Ok(data.into())
     }
 
-    pub fn decrypt(&self, data: &mut [u8]) -> Result<(), DecryptError> {
+    pub fn decrypt(&self, data: &mut [u8]) -> Result<(), EncDecError> {
         let (_, header) = Header::from_bytes((data, 0))?;
         assert_eq!(data.len(), header.size as usize);
 
@@ -102,7 +106,7 @@ impl EncDecSession {
 
         match (checksum[1].wrapping_sub(checksum[0]) & 255) as u8 != header.checksum {
             true => Ok(()),
-            false => Err(DecryptError::InvalidChecksum(
+            false => Err(EncDecError::InvalidChecksum(
                 (checksum[0] & 255) as u8,
                 header.checksum,
             )),
@@ -111,18 +115,21 @@ impl EncDecSession {
 }
 
 #[derive(Debug, Error)]
-pub enum DecryptError {
+pub enum EncDecError {
     #[error("Invalid checksum {0} {1}")]
     InvalidChecksum(u8, u8),
 
     #[error(transparent)]
     DekuError(#[from] deku::DekuError),
+
+    #[error(transparent)]
+    WritableResourceError(#[from] WritableResourceError),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{messages::MessageIdentifier, WritableResourceError};
+    use crate::{messages::ServerMessage, WritableResourceError};
 
     #[derive(Debug, Clone, PartialEq, Eq, DekuWrite, DekuRead)]
     struct PayloadTest {
@@ -130,8 +137,9 @@ mod tests {
         b: i32,
     }
     impl WritableResource for PayloadTest {
-        const IDENTIFIER: MessageIdentifier = MessageIdentifier::Login;
+        const IDENTIFIER: ServerMessage = ServerMessage::MessagePanel;
         type Output = PayloadTest;
+        const SIZE: u16 = 8;
 
         fn write(self) -> Result<Self::Output, WritableResourceError> {
             Ok(self)
@@ -146,8 +154,7 @@ mod tests {
         rng.fill(&mut array);
 
         let enc_session = EncDecSession::new(0, Rc::new(array));
-        let payload: Vec<u8> = PayloadTest { a: 1, b: 2 }.try_into().unwrap();
-        let message = enc_session.encrypt::<PayloadTest>(&payload).unwrap();
+        let message = enc_session.encrypt(PayloadTest { a: 1, b: 2 }).unwrap();
 
         assert_ne!(message.len(), std::mem::size_of::<PayloadTest>());
     }
@@ -159,8 +166,7 @@ mod tests {
         rng.fill(&mut array);
 
         let enc_session = EncDecSession::new(0, Rc::new(array));
-        let payload: Vec<u8> = PayloadTest { a: 1, b: 2 }.try_into().unwrap();
-        let message = enc_session.encrypt::<PayloadTest>(&payload).unwrap();
+        let message = enc_session.encrypt(PayloadTest { a: 1, b: 2 }).unwrap();
 
         assert_eq!(
             u16::from_le_bytes([message[0], message[1]]) as usize,
@@ -169,16 +175,18 @@ mod tests {
     }
 
     #[test]
-    fn encrypt_decrypt() {
+    fn encryption_roundtrip() {
         let mut rng = rand::thread_rng();
         let mut array = [0u8; 512];
         rng.fill(&mut array);
 
         let enc_session = EncDecSession::new(255, Rc::new(array));
         let payload = PayloadTest { a: 1, b: 2 };
-        let data: Vec<u8> = payload.clone().try_into().unwrap();
-        let mut message = enc_session.encrypt::<PayloadTest>(&data).unwrap().to_vec();
-
+        let mut message = enc_session.encrypt(payload.clone()).unwrap().to_vec();
+        assert_ne!(
+            PayloadTest::from_bytes((&message[12..], 0)).unwrap().1,
+            payload
+        );
         enc_session.decrypt(&mut message).unwrap();
 
         let (_, decrypted) = PayloadTest::from_bytes((&message[12..], 0)).unwrap();
@@ -192,9 +200,8 @@ mod tests {
         rng.fill(&mut array);
 
         let enc_session = EncDecSession::new(255, Rc::new(array));
-        let payload: Vec<u8> = PayloadTest { a: 1, b: 2 }.try_into().unwrap();
         let mut message = enc_session
-            .encrypt::<PayloadTest>(&payload)
+            .encrypt(PayloadTest { a: 1, b: 2 })
             .unwrap()
             .to_vec();
 
@@ -209,16 +216,48 @@ mod tests {
         rng.fill(&mut array);
 
         let enc_session = EncDecSession::new(255, Rc::new(array));
-        let payload: Vec<u8> = PayloadTest { a: 1, b: 2 }.try_into().unwrap();
         let mut message = enc_session
-            .encrypt::<PayloadTest>(&payload)
+            .encrypt(PayloadTest { a: 1, b: 2 })
             .unwrap()
             .to_vec();
 
         enc_session.decrypt(&mut message).unwrap();
         assert_eq!(
             u16::from_le_bytes([message[4], message[5]]),
-            PayloadTest::IDENTIFIER as u16
+            u16::try_from(PayloadTest::IDENTIFIER).unwrap()
         );
+    }
+
+    #[derive(Debug, DekuRead, DekuWrite)]
+    pub struct PayloadWithClientId(u32);
+
+    impl WritableResource for PayloadWithClientId {
+        const IDENTIFIER: ServerMessage = ServerMessage::MessagePanel;
+        type Output = PayloadWithClientId;
+        const SIZE: u16 = 4;
+
+        fn write(self) -> Result<Self::Output, WritableResourceError> {
+            Ok(self)
+        }
+
+        fn client_id(&self) -> Option<u16> {
+            Some(1000)
+        }
+    }
+
+    #[test]
+    fn the_packet_can_decide_the_client_id() {
+        let mut rng = rand::thread_rng();
+        let mut array = [0u8; 512];
+        rng.fill(&mut array);
+
+        let enc_session = EncDecSession::new(255, Rc::new(array));
+        let mut message = enc_session
+            .encrypt(PayloadWithClientId(1))
+            .unwrap()
+            .to_vec();
+
+        enc_session.decrypt(&mut message).unwrap();
+        assert_eq!(u16::from_le_bytes([message[6], message[7]]), 1000);
     }
 }

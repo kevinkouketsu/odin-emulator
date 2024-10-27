@@ -3,15 +3,20 @@ pub mod framed_message;
 pub mod messages;
 
 use deku::prelude::*;
-use messages::{string::FixedSizeStringError, MessageIdentifier};
+use messages::{string::FixedSizeStringError, ServerMessage};
 use std::ffi::IntoStringError;
 use thiserror::Error;
 
 pub trait WritableResource {
-    const IDENTIFIER: MessageIdentifier;
+    const IDENTIFIER: ServerMessage;
     type Output: DekuWriter + deku::DekuContainerWrite;
+    // TODO: temporary
+    const SIZE: u16;
 
     fn write(self) -> Result<Self::Output, WritableResourceError>;
+    fn client_id(&self) -> Option<u16> {
+        None
+    }
 }
 
 #[derive(Debug, Error)]

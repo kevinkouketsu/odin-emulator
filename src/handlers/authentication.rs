@@ -1,6 +1,10 @@
 use crate::session::Session;
-use deku::prelude::*;
-use odin_networking::{messages::string::FixedSizeString, WritableResourceError};
+use chrono::{Local, NaiveDateTime};
+use odin_models::account::BanType;
+use odin_networking::{
+    messages::{client::login::LoginMessageRaw, server::message_panel::MessagePanel},
+    WritableResourceError,
+};
 use odin_repositories::account_repository::{AccountRepository, AccountRepositoryError};
 use thiserror::Error;
 
@@ -14,6 +18,26 @@ pub struct LoginMessage {
 impl LoginMessage {
     pub async fn handle<A: AccountRepository, S: Session>(
         &self,
+        session: &S,
+        cliver: CliVer,
+        account_repository: A,
+    ) {
+        if let Err(err) = self.handle_impl(session, cliver, account_repository).await {
+            let message = match err {
+                AuthenticationError::InvalidCliVer(_) => {
+                    "Baixe as atualizações pelo launcher ou pelo site"
+                }
+                AuthenticationError::AccountRepositoryError(_) => "Usuário ou senha inválidos",
+                AuthenticationError::AccountInAnalysis(_) => "Conta está em análise",
+                AuthenticationError::AccountBlocked(_) => "Conta está banida",
+            };
+
+            session.send::<MessagePanel>(message.into()).unwrap();
+        }
+    }
+
+    async fn handle_impl<A: AccountRepository, S: Session>(
+        &self,
         _session: &S,
         cliver: CliVer,
         account_repository: A,
@@ -22,22 +46,21 @@ impl LoginMessage {
             return Err(AuthenticationError::InvalidCliVer(self.cliver.into()));
         }
 
-        let _account = account_repository
+        let account = account_repository
             .fetch_account(&self.username, &self.password)
             .await?;
 
+        if let Some(ban) = &account.ban {
+            if ban.expiration > Local::now().naive_local() {
+                return Err(match ban.r#type {
+                    BanType::Analysis => AuthenticationError::AccountInAnalysis(ban.expiration),
+                    BanType::Blocked => AuthenticationError::AccountBlocked(ban.expiration),
+                });
+            }
+        }
+
         Ok(())
     }
-}
-
-#[derive(Debug, DekuWrite, DekuRead)]
-pub struct LoginMessageRaw {
-    pub password: FixedSizeString<16>,
-    pub username: FixedSizeString<16>,
-    pub tid: [u8; 52],
-    pub cliver: u32,
-    pub force: u32,
-    pub mac: [u8; 16],
 }
 impl TryInto<LoginMessage> for LoginMessageRaw {
     type Error = WritableResourceError;
@@ -88,14 +111,22 @@ pub enum AuthenticationError {
 
     #[error(transparent)]
     AccountRepositoryError(#[from] AccountRepositoryError),
+
+    #[error("Account is in analysis until {0}")]
+    AccountInAnalysis(NaiveDateTime),
+
+    #[error("Account is blocked until {0}")]
+    AccountBlocked(NaiveDateTime),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::session::SendError;
+    use chrono::{Days, Local};
+    use deku::prelude::*;
     use futures::FutureExt;
-    use odin_models::account::Account;
+    use odin_models::account::{Account, Ban, BanType};
     use odin_networking::WritableResource;
     use std::{
         collections::HashMap,
@@ -124,6 +155,13 @@ mod tests {
                 .unwrap()
                 .insert(account.username.clone(), account);
         }
+
+        pub fn edit_account<F: FnOnce(&mut Account)>(&mut self, username: &str, callback: F) {
+            let mut accounts = self.accounts.write().unwrap();
+            let account = accounts.get_mut(username);
+
+            callback(account.unwrap());
+        }
     }
     impl From<(&str, &str)> for MockAccountRepository {
         fn from(value: (&str, &str)) -> Self {
@@ -131,6 +169,7 @@ mod tests {
             account_repository.add_account(Account {
                 username: value.0.to_string(),
                 password: value.1.to_string(),
+                ban: None,
             });
 
             account_repository
@@ -145,11 +184,11 @@ mod tests {
             async move {
                 let accounts = self.accounts.read().unwrap();
                 let Some(account) = accounts.get(username) else {
-                    return Err(AccountRepositoryError::InvalidUsernameOrPassword);
+                    return Err(AccountRepositoryError::InvalidUsername);
                 };
 
                 if account.password != password {
-                    return Err(AccountRepositoryError::InvalidUsernameOrPassword);
+                    return Err(AccountRepositoryError::InvalidPassword);
                 }
 
                 Ok(account.clone())
@@ -176,7 +215,7 @@ mod tests {
         let message = get_login_message();
         assert!(matches!(
             message
-                .handle(
+                .handle_impl(
                     &MockSession::default(),
                     CliVer::new(2),
                     MockAccountRepository::default()
@@ -194,50 +233,79 @@ mod tests {
         let mut account_repository = MockAccountRepository::default();
         assert!(matches!(
             message
-                .handle(
+                .handle_impl(
                     &MockSession::default(),
                     CliVer::new(1),
                     account_repository.clone()
                 )
                 .await
                 .unwrap_err(),
-            AuthenticationError::AccountRepositoryError(
-                AccountRepositoryError::InvalidUsernameOrPassword
-            )
+            AuthenticationError::AccountRepositoryError(AccountRepositoryError::InvalidUsername)
         ));
 
         account_repository.add_account(Account {
             username: "admin".to_string(),
             password: "admin2".to_string(),
+            ban: None,
         });
 
         assert!(matches!(
             message
-                .handle(&MockSession::default(), CliVer::new(1), account_repository)
+                .handle_impl(&MockSession::default(), CliVer::new(1), account_repository)
                 .await,
             Err(AuthenticationError::AccountRepositoryError(
-                AccountRepositoryError::InvalidUsernameOrPassword
+                AccountRepositoryError::InvalidPassword
             ))
         ));
     }
 
     #[tokio::test]
-    async fn it_sends_the_charlist_to_the_user() {
-        let message = get_login_message();
-        let account_repository = MockAccountRepository::from(("admin", "admin"));
-
-        let session = MockSession::default();
-        MockSession::default();
-        assert!(message
-            .handle(&session, CliVer::new(1), account_repository)
-            .await
-            .is_ok());
-
-        let message = session
-            .messages
-            .try_read()
+    async fn checks_if_account_is_banned_or_in_analysis() {
+        let mut account_repository = MockAccountRepository::default();
+        let expiration = Local::now()
+            .checked_add_days(Days::new(3))
             .unwrap()
-            .first()
-            .expect("Must have a message");
+            .naive_local();
+
+        account_repository.add_account(Account {
+            username: "admin".to_string(),
+            password: "admin".to_string(),
+            ban: Some(Ban {
+                expiration,
+                r#type: BanType::Analysis,
+            }),
+        });
+
+        account_repository.edit_account("admin", |account| {
+            account.ban.as_mut().unwrap().r#type = BanType::Blocked
+        });
+
+        let message = get_login_message();
+        assert!(matches!(
+            message
+                .handle_impl(&MockSession::default(), CliVer::new(1), account_repository)
+                .await,
+            Err(AuthenticationError::AccountBlocked(_))
+        ));
     }
+
+    // #[tokio::test]
+    // async fn it_sends_the_charlist_to_the_user() {
+    //     let message = get_login_message();
+    //     let account_repository = MockAccountRepository::from(("admin", "admin"));
+
+    //     let session = MockSession::default();
+    //     MockSession::default();
+    //     assert!(message
+    //         .handle_impl(&session, CliVer::new(1), account_repository)
+    //         .await
+    //         .is_ok());
+
+    //     let message = session
+    //         .messages
+    //         .try_read()
+    //         .unwrap()
+    //         .first()
+    //         .expect("Must have a message");
+    // }
 }

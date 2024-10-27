@@ -22,12 +22,16 @@ odin-postgresql = { path = "./odin-postgresql", optional = true }
 odin-repositories = { path = "./odin-repositories" }
 dotenvy = { version = "0.15", optional = true }
 thiserror = "1.0.50"
-tokio = { version = "1.34.0", features = ["macros", "rt", "rt-multi-thread"] }
+tokio = { version = "1.41.0", features = ["macros", "rt", "rt-multi-thread"] }
+chrono = "0.4.38"
 
 [workspace]
-members = [ "odin-models",
+members = [ "odin-macros", "odin-models",
+    # "odin-macros",
     "odin-models",
     "odin-networking",
     "odin-postgresql",
+    "odin-postgresql/entity",
+    "odin-postgresql/migration",
     "odin-repositories"
 ]

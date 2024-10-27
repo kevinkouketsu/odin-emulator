@@ -106,8 +106,10 @@ impl GameServer {
         let _handle = tokio::spawn(async move {
             while !tx.is_closed() {
                 let event = enqueue.receive();
-                let _ = tx.send(event).await;
+                tx.send(event).await.unwrap();
             }
+
+            panic!("Main loop ended, wtf");
         });
 
         while let Some(event) = rx.next().await {
@@ -231,6 +233,7 @@ impl GameServer {
                 StoredNodeEvent::Signal(_signal) => {}
             };
         }
+        panic!("Main loop ended")
     }
 }
 

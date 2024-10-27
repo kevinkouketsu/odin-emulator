@@ -1,5 +1,5 @@
 use deku::prelude::*;
-use odin_networking::{enc_session::DecryptError, WritableResource, WritableResourceError};
+use odin_networking::{enc_session::EncDecError, WritableResource, WritableResourceError};
 use thiserror::Error;
 
 pub trait Session {
@@ -12,7 +12,7 @@ pub enum SendError {
     DekuError(#[from] DekuError),
 
     #[error(transparent)]
-    EncryptionError(#[from] DecryptError),
+    EncryptionError(#[from] EncDecError),
 
     #[error(transparent)]
     WritableResourceError(#[from] WritableResourceError),

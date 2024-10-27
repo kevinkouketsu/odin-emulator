@@ -1,11 +1,11 @@
 use crate::{
     configuration::Configuration,
-    handlers::authentication::{AuthenticationError, LoginMessage, LoginMessageRaw},
+    handlers::authentication::{AuthenticationError, LoginMessage},
     user_session::UserSession,
 };
 use deku::prelude::*;
 use odin_networking::{
-    messages::{header::Header, MessageIdentifier},
+    messages::{client::login::LoginMessageRaw, header::Header, ClientMessage},
     WritableResourceError,
 };
 use odin_repositories::account_repository::AccountRepository;
@@ -31,7 +31,7 @@ impl Message {
                         configuration.get_current_cliver(),
                         account_repository,
                     )
-                    .await?
+                    .await
             }
             Message::Token => todo!(),
         };
@@ -43,14 +43,14 @@ impl TryFrom<((&[u8], usize), Header)> for Message {
     type Error = MessageError;
 
     fn try_from((rest, header): ((&[u8], usize), Header)) -> Result<Self, Self::Error> {
-        let message_type = MessageIdentifier::try_from(header.typ)
+        let message_type = ClientMessage::try_from(header.typ)
             .map_err(|_| MessageError::NotRecognized(header.clone()))?;
 
         Ok(match message_type {
-            MessageIdentifier::Login => {
+            ClientMessage::Login => {
                 Message::Login(LoginMessageRaw::from_bytes(rest)?.1.try_into()?)
             }
-            MessageIdentifier::Token => return Err(MessageError::NotImplemented(header)),
+            ClientMessage::Token => return Err(MessageError::NotImplemented(header)),
         })
     }
 }

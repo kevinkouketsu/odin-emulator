@@ -1,11 +1,10 @@
-mod account;
-pub mod entity;
-
-use crate::entity::account::Entity as Account;
+use chrono::Local;
+use entity::account::Entity as Account;
+use entity::account_ban::Entity as AccountBan;
 use futures::FutureExt;
-use odin_models::account::Account as AccountModel;
+use odin_models::account::{Account as AccountModel, Ban, BanType};
 use odin_repositories::account_repository::{AccountRepository, AccountRepositoryError};
-use sea_orm::{ColumnTrait, Database, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
+use sea_orm::{prelude::*, Database, DatabaseConnection, DbErr, QueryOrder};
 use std::{future::Future, pin::Pin};
 use thiserror::Error;
 
@@ -31,14 +30,32 @@ impl AccountRepository for PostgresqlService {
                 .filter(entity::account::Column::Username.eq(username))
                 .one(&self.connection)
                 .await
-                .map_err(|_| AccountRepositoryError::InvalidUsernameOrPassword)?
-                .ok_or(AccountRepositoryError::InvalidUsernameOrPassword)?;
+                .map_err(|e| AccountRepositoryError::FailToLoad(e.to_string()))?
+                .ok_or(AccountRepositoryError::InvalidUsername)?;
 
             if account.password != password {
-                return Err(AccountRepositoryError::InvalidUsernameOrPassword);
+                return Err(AccountRepositoryError::InvalidPassword);
             }
 
-            Ok(account.into())
+            let ban = AccountBan::find()
+                .filter(entity::account_ban::Column::AccountId.eq(account.id))
+                .filter(entity::account_ban::Column::ExpiresAt.gt(Local::now()))
+                .order_by_desc(entity::account_ban::Column::ExpiresAt)
+                .one(&self.connection)
+                .await
+                .map_err(|e| AccountRepositoryError::FailToLoad(e.to_string()))?;
+
+            Ok(AccountModel {
+                username: account.username,
+                password: account.password,
+                ban: ban.map(|ban| Ban {
+                    expiration: ban.expires_at,
+                    r#type: match ban.r#type {
+                        entity::account_ban::BanType::Analysis => BanType::Analysis,
+                        entity::account_ban::BanType::Blocked => BanType::Blocked,
+                    },
+                }),
+            })
         }
         .boxed()
     }

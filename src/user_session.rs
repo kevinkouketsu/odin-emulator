@@ -2,13 +2,12 @@ use crate::{
     session::{SendError, Session},
     GameServerSignals,
 };
-use deku::prelude::*;
 use message_io::{
     network::{Endpoint, ResourceId},
     node::NodeHandler,
 };
 use odin_networking::{
-    enc_session::{DecryptError, EncDecSession},
+    enc_session::{EncDecError, EncDecSession},
     framed_message::HandshakeState,
     WritableResource,
 };
@@ -45,7 +44,7 @@ impl UserSession {
         self.framed_message.next_message()
     }
 
-    pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, DecryptError> {
+    pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, EncDecError> {
         let mut output = vec![0; data.len()];
         output.copy_from_slice(data);
         self.encdec_session.decrypt(&mut output)?;
@@ -55,8 +54,7 @@ impl UserSession {
 }
 impl Session for UserSession {
     fn send<R: WritableResource>(&self, message: R) -> Result<(), SendError> {
-        let payload: Vec<u8> = message.write()?.to_bytes()?;
-        let bytes = self.encdec_session.encrypt::<R>(&payload)?;
+        let bytes = self.encdec_session.encrypt::<R>(message)?;
 
         self.handler.network().send(self.endpoint, &bytes);
         Ok(())
