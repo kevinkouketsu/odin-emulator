@@ -62,18 +62,18 @@ impl LoginMessage {
         Ok(())
     }
 }
-impl TryInto<LoginMessage> for LoginMessageRaw {
+impl TryFrom<LoginMessageRaw> for LoginMessage {
     type Error = WritableResourceError;
 
-    fn try_into(self) -> Result<LoginMessage, Self::Error> {
-        let username: String = self.username.try_into()?;
-        let password: String = self.password.try_into()?;
+    fn try_from(value: LoginMessageRaw) -> Result<Self, Self::Error> {
+        let username: String = value.username.try_into()?;
+        let password: String = value.password.try_into()?;
 
         Ok(LoginMessage {
             username,
             password,
-            tid: self.tid,
-            cliver: CliVer::from_encrypted(self.cliver),
+            tid: value.tid,
+            cliver: CliVer::from_encrypted(value.cliver),
         })
     }
 }
