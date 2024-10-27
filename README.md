@@ -5,7 +5,7 @@ Odin Emulator is a server implementation for the With Your Destiny MMO, written 
 This is an educational project aimed at writing more Rust to improve my skills. One of my goals is to develop this project in a distinctly "Rusty" way. I previously created this project in C/C++, following a more procedural style with many global variables (it was decompiled from the original executable). I also aim to enhance my skills in writing tests, which I consider a crucial part of the development process.
 
 ## Database
-The chosen database for this project is PostgreSQL, a fast and simple option. I already have a complete database structure for the game, so I plan to use it but am open to making changes if needed.
+The chosen database for this project is PostgreSQL, a fast and simple option. I already have a complete database structure for the game, so I plan to use it but I am open to making changes if needed.
 
 I am also open to switching databases in the future if required. I am creating abstractions at the database layer, so the project could potentially support other databases that SeaORM supports. While I am still evaluating SeaORM for this project, the simplicity of the queries might make an ORM unnecessary.
 
