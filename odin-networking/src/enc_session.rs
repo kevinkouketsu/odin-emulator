@@ -74,28 +74,15 @@ impl EncDecSession {
 
         let mut checksum: [i32; 2] = [0; 2];
         (4..data.len()).for_each(|i| {
-            let key = self.keytable[(pos & 255).wrapping_mul(2).wrapping_add(1)] as i32;
+            let key = self.keytable[(pos & 255).wrapping_mul(2).wrapping_add(1)];
             let encoded = data[i] as i8;
 
             checksum[0] += encoded as i32;
-            let key_after: i8;
             let decoded = match i & 3 {
-                0 => {
-                    key_after = (key.wrapping_shl(1) & 255) as _;
-                    encoded.wrapping_sub(key_after)
-                }
-                1 => {
-                    key_after = (key.wrapping_shr(3) & 255) as _;
-                    encoded.wrapping_add(key_after)
-                }
-                2 => {
-                    key_after = (key.wrapping_shl(2) & 255) as _;
-                    encoded.wrapping_sub(key_after)
-                }
-                3 => {
-                    key_after = (key.wrapping_shr(5) & 255) as _;
-                    encoded.wrapping_add(key_after)
-                }
+                0 => encoded.wrapping_sub(key.wrapping_shl(1) as i8),
+                1 => encoded.wrapping_add(key.wrapping_shr(3) as i8),
+                2 => encoded.wrapping_sub(key.wrapping_shl(2) as i8),
+                3 => encoded.wrapping_add(key.wrapping_shr(5) as i8),
                 _ => unreachable!(),
             };
 
