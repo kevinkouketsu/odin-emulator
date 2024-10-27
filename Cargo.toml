@@ -26,8 +26,7 @@ tokio = { version = "1.41.0", features = ["macros", "rt", "rt-multi-thread"] }
 chrono = "0.4.38"
 
 [workspace]
-members = [ "odin-macros", "odin-models",
-    # "odin-macros",
+members = [
     "odin-models",
     "odin-networking",
     "odin-postgresql",
