@@ -28,7 +28,8 @@ impl LoginMessage {
                     "Baixe as atualizações pelo launcher ou pelo site"
                 }
                 AuthenticationError::AccountRepositoryError(_)
-                | AuthenticationError::InvalidPassword => "Usuário ou senha inválidos",
+                | AuthenticationError::InvalidPassword
+                | AuthenticationError::AccountNotFound => "Usuário ou senha inválidos",
                 AuthenticationError::AccountInAnalysis(_) => "Conta está em análise",
                 AuthenticationError::AccountBlocked(_) => "Conta está banida",
             };
@@ -47,7 +48,11 @@ impl LoginMessage {
             return Err(AuthenticationError::InvalidCliVer(self.cliver.into()));
         }
 
-        let account = account_repository.fetch_account(&self.username).await?;
+        let account = account_repository
+            .fetch_account(&self.username)
+            .await?
+            .ok_or(AuthenticationError::AccountNotFound)?;
+
         if account.password != self.password {
             return Err(AuthenticationError::InvalidPassword);
         }
@@ -113,6 +118,9 @@ pub enum AuthenticationError {
 
     #[error("The password is invalid")]
     InvalidPassword,
+
+    #[error("The account was not found")]
+    AccountNotFound,
 
     #[error(transparent)]
     AccountRepositoryError(#[from] AccountRepositoryError),
@@ -184,14 +192,15 @@ mod tests {
         fn fetch_account<'a>(
             &'a self,
             username: &'a str,
-        ) -> Pin<Box<dyn Future<Output = Result<Account, AccountRepositoryError>> + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Option<Account>, AccountRepositoryError>> + 'a>>
+        {
             async move {
                 let accounts = self.accounts.read().unwrap();
                 let Some(account) = accounts.get(username) else {
-                    return Err(AccountRepositoryError::InvalidUsername);
+                    return Ok(None);
                 };
 
-                Ok(account.clone())
+                Ok(Some(account.clone()))
             }
             .boxed()
         }
@@ -240,7 +249,7 @@ mod tests {
                 )
                 .await
                 .unwrap_err(),
-            AuthenticationError::AccountRepositoryError(AccountRepositoryError::InvalidUsername)
+            AuthenticationError::AccountNotFound
         ));
 
         account_repository.add_account(Account {

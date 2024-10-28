@@ -20,14 +20,17 @@ impl AccountRepository for PostgreSqlAccountRepository {
     fn fetch_account<'a>(
         &'a self,
         username: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<AccountModel, AccountRepositoryError>> + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<AccountModel>, AccountRepositoryError>> + 'a>>
+    {
         async move {
-            let account = Account::find()
+            let Some(account) = Account::find()
                 .filter(entity::account::Column::Username.eq(username))
                 .one(&self.connection)
                 .await
                 .map_err(|e| AccountRepositoryError::FailToLoad(e.to_string()))?
-                .ok_or(AccountRepositoryError::InvalidUsername)?;
+            else {
+                return Ok(None);
+            };
 
             let ban = AccountBan::find()
                 .filter(entity::account_ban::Column::AccountId.eq(account.id))
@@ -37,7 +40,7 @@ impl AccountRepository for PostgreSqlAccountRepository {
                 .await
                 .map_err(|e| AccountRepositoryError::FailToLoad(e.to_string()))?;
 
-            Ok(AccountModel {
+            Ok(Some(AccountModel {
                 username: account.username,
                 password: account.password,
                 ban: ban.map(|ban| Ban {
@@ -47,7 +50,7 @@ impl AccountRepository for PostgreSqlAccountRepository {
                         entity::account_ban::BanType::Blocked => BanType::Blocked,
                     },
                 }),
-            })
+            }))
         }
         .boxed()
     }
