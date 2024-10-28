@@ -27,7 +27,8 @@ impl LoginMessage {
                 AuthenticationError::InvalidCliVer(_) => {
                     "Baixe as atualizações pelo launcher ou pelo site"
                 }
-                AuthenticationError::AccountRepositoryError(_) => "Usuário ou senha inválidos",
+                AuthenticationError::AccountRepositoryError(_)
+                | AuthenticationError::InvalidPassword => "Usuário ou senha inválidos",
                 AuthenticationError::AccountInAnalysis(_) => "Conta está em análise",
                 AuthenticationError::AccountBlocked(_) => "Conta está banida",
             };
@@ -46,9 +47,10 @@ impl LoginMessage {
             return Err(AuthenticationError::InvalidCliVer(self.cliver.into()));
         }
 
-        let account = account_repository
-            .fetch_account(&self.username, &self.password)
-            .await?;
+        let account = account_repository.fetch_account(&self.username).await?;
+        if account.password != self.password {
+            return Err(AuthenticationError::InvalidPassword);
+        }
 
         if let Some(ban) = &account.ban {
             if ban.expiration > Local::now().naive_local() {
@@ -108,6 +110,9 @@ impl PartialEq<u32> for CliVer {
 pub enum AuthenticationError {
     #[error("The client version {0} is not valid")]
     InvalidCliVer(u32),
+
+    #[error("The password is invalid")]
+    InvalidPassword,
 
     #[error(transparent)]
     AccountRepositoryError(#[from] AccountRepositoryError),
@@ -179,17 +184,12 @@ mod tests {
         fn fetch_account<'a>(
             &'a self,
             username: &'a str,
-            password: &'a str,
         ) -> Pin<Box<dyn Future<Output = Result<Account, AccountRepositoryError>> + 'a>> {
             async move {
                 let accounts = self.accounts.read().unwrap();
                 let Some(account) = accounts.get(username) else {
                     return Err(AccountRepositoryError::InvalidUsername);
                 };
-
-                if account.password != password {
-                    return Err(AccountRepositoryError::InvalidPassword);
-                }
 
                 Ok(account.clone())
             }
@@ -253,9 +253,7 @@ mod tests {
             message
                 .handle_impl(&MockSession::default(), CliVer::new(1), account_repository)
                 .await,
-            Err(AuthenticationError::AccountRepositoryError(
-                AccountRepositoryError::InvalidPassword
-            ))
+            Err(AuthenticationError::InvalidPassword)
         ));
     }
 

@@ -6,7 +6,6 @@ pub trait AccountRepository: Clone {
     fn fetch_account<'a>(
         &'a self,
         username: &'a str,
-        password: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<Account, AccountRepositoryError>> + 'a>>;
 }
 
@@ -14,9 +13,6 @@ pub trait AccountRepository: Clone {
 pub enum AccountRepositoryError {
     #[error("The username is not valid")]
     InvalidUsername,
-
-    #[error("The password is not valid")]
-    InvalidPassword,
 
     #[error("Fail to load account: {0}")]
     FailToLoad(String),
