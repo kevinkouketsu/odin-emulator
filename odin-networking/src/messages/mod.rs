@@ -1,7 +1,8 @@
+pub mod client;
+pub mod common;
 pub mod header;
 pub mod server;
 pub mod string;
-pub mod client;
 
 use thiserror::Error;
 
@@ -32,6 +33,7 @@ impl TryFrom<u16> for ClientMessage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ServerMessage {
     MessagePanel,
+    FirstCharlist,
 }
 impl TryFrom<ServerMessage> for u16 {
     type Error = InvalidMessageType;
@@ -39,6 +41,7 @@ impl TryFrom<ServerMessage> for u16 {
     fn try_from(value: ServerMessage) -> Result<Self, Self::Error> {
         Ok(match value {
             ServerMessage::MessagePanel => 0x101,
+            ServerMessage::FirstCharlist => 0x10A,
         })
     }
 }

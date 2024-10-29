@@ -1553,6 +1553,8 @@ dependencies = [
  "bytes",
  "deku",
  "futures",
+ "log",
+ "odin-models",
  "rand",
  "thiserror",
 ]

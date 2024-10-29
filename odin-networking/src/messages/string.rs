@@ -1,8 +1,8 @@
 use deku::{ctx::Limit, prelude::*};
-use std::ffi::CString;
+use std::ffi::{CString, NulError};
 use thiserror::Error;
 
-#[derive(Clone, Debug, PartialEq, Eq, DekuWrite, DekuRead)]
+#[derive(Clone, Default, Debug, PartialEq, Eq, DekuWrite, DekuRead)]
 pub struct FixedSizeString<const N: usize> {
     #[deku(
         reader = "FixedSizeString::<N>::read(deku::reader)",
@@ -78,18 +78,31 @@ impl<const N: usize> TryFrom<String> for FixedSizeString<N> {
     type Error = FixedSizeStringError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.as_str().try_into()
+    }
+}
+impl<const N: usize> TryFrom<&str> for FixedSizeString<N> {
+    type Error = FixedSizeStringError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
         let len = value.len();
         match len > N {
-            true => Err(FixedSizeStringError(value, len)),
+            true => Err(FixedSizeStringError::InvalidSize(value.to_string(), len)),
             false => Ok(FixedSizeString {
                 str: CString::new(value).unwrap(),
             }),
         }
     }
 }
+
 #[derive(Debug, Error)]
-#[error("The string size is bigger than the fixed size: {0} {0}")]
-pub struct FixedSizeStringError(String, usize);
+pub enum FixedSizeStringError {
+    #[error("The string size is bigger than the fixed size: {0} {0}")]
+    InvalidSize(String, usize),
+
+    #[error(transparent)]
+    NulError(#[from] NulError),
+}
 
 #[cfg(test)]
 mod tests {

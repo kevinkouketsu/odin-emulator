@@ -18,7 +18,6 @@ impl From<&str> for MessagePanel {
 impl WritableResource for MessagePanel {
     const IDENTIFIER: ServerMessage = ServerMessage::MessagePanel;
     type Output = MessagePanelRaw;
-    const SIZE: u16 = 128;
 
     fn write(self) -> Result<Self::Output, WritableResourceError> {
         Ok(MessagePanelRaw(self.0.try_into()?))

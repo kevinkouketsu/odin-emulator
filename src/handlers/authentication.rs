@@ -1,8 +1,14 @@
 use crate::session::Session;
 use chrono::{Local, NaiveDateTime};
-use odin_models::account::BanType;
+use odin_models::{account::BanType, item::Item, storage::Storage, MAX_EQUIPS};
 use odin_networking::{
-    messages::{client::login::LoginMessageRaw, server::message_panel::MessagePanel},
+    messages::{
+        client::login::LoginMessageRaw,
+        server::{
+            charlist::{Charlist, CharlistInfo},
+            message_panel::MessagePanel,
+        },
+    },
     WritableResourceError,
 };
 use odin_repositories::account_repository::{AccountRepository, AccountRepositoryError};
@@ -22,19 +28,22 @@ impl LoginMessage {
         cliver: CliVer,
         account_repository: A,
     ) {
-        if let Err(err) = self.handle_impl(session, cliver, account_repository).await {
-            let message = match err {
-                AuthenticationError::InvalidCliVer(_) => {
-                    "Baixe as atualizações pelo launcher ou pelo site"
-                }
-                AuthenticationError::AccountRepositoryError(_)
-                | AuthenticationError::InvalidPassword
-                | AuthenticationError::AccountNotFound => "Usuário ou senha inválidos",
-                AuthenticationError::AccountInAnalysis(_) => "Conta está em análise",
-                AuthenticationError::AccountBlocked(_) => "Conta está banida",
-            };
+        match self.handle_impl(session, cliver, account_repository).await {
+            Ok(charlist) => session.send(charlist).unwrap(),
+            Err(err) => {
+                let message = match err {
+                    AuthenticationError::InvalidCliVer(_) => {
+                        "Baixe as atualizações pelo launcher ou pelo site"
+                    }
+                    AuthenticationError::AccountRepositoryError(_)
+                    | AuthenticationError::InvalidPassword
+                    | AuthenticationError::AccountNotFound => "Usuário ou senha inválidos",
+                    AuthenticationError::AccountInAnalysis(_) => "Conta está em análise",
+                    AuthenticationError::AccountBlocked(_) => "Conta está banida",
+                };
 
-            session.send::<MessagePanel>(message.into()).unwrap();
+                session.send::<MessagePanel>(message.into()).unwrap();
+            }
         }
     }
 
@@ -43,7 +52,7 @@ impl LoginMessage {
         _session: &S,
         cliver: CliVer,
         account_repository: A,
-    ) -> Result<(), AuthenticationError> {
+    ) -> Result<Charlist, AuthenticationError> {
         if self.cliver != cliver {
             return Err(AuthenticationError::InvalidCliVer(self.cliver.into()));
         }
@@ -66,7 +75,49 @@ impl LoginMessage {
             }
         }
 
-        Ok(())
+        let mut equipments = [Item::default(); MAX_EQUIPS];
+        equipments[0] = Item::from((11, 43, 0));
+
+        let character = CharlistInfo {
+            position: (2100, 2100).into(),
+            name: "Wed".to_string(),
+            status: Default::default(),
+            equips: equipments,
+            guild: 0,
+            coin: 2100,
+            experience: 2100,
+        };
+        let charlist = Charlist {
+            token: vec![0; 16],
+            character_info: vec![
+                (0, character.clone()),
+                (
+                    1,
+                    CharlistInfo {
+                        name: "Wed2".to_string(),
+                        ..character.clone()
+                    },
+                ),
+                (
+                    2,
+                    CharlistInfo {
+                        name: "Wed3".to_string(),
+                        ..character.clone()
+                    },
+                ),
+                (
+                    3,
+                    CharlistInfo {
+                        name: "Wed4".to_string(),
+                        ..character
+                    },
+                ),
+            ],
+            storage: Storage::default(),
+            account_name: self.username.clone(),
+        };
+
+        Ok(charlist)
     }
 }
 impl TryFrom<LoginMessageRaw> for LoginMessage {

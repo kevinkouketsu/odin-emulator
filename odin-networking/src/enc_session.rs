@@ -21,12 +21,10 @@ impl EncDecSession {
     pub fn encrypt<R: WritableResource>(&self, data: R) -> Result<Bytes, EncDecError> {
         let mut rng = rand::thread_rng();
         let keyword_index = rng.gen_range::<u8, _>(0u8..HALF_KEYTABLE_LENGTH as u8);
-        let client_id = match data.client_id() {
-            Some(client_id) => client_id,
-            None => self.id,
-        };
+        let client_id = data.client_id().unwrap_or(self.id);
+        let data = data.write()?.to_bytes()?;
         let header = Header {
-            size: (R::SIZE as usize + std::mem::size_of::<Header>()) as u16,
+            size: (data.len() + std::mem::size_of::<Header>()) as u16,
             keyword: keyword_index,
             checksum: 0,
             typ: u16::try_from(R::IDENTIFIER).expect("Message identifier must be valid"),
@@ -34,47 +32,46 @@ impl EncDecSession {
             tick: 0,
         };
 
-        let mut header: Vec<u8> = header.try_into()?;
-        let data = data.write()?.to_bytes()?;
-        header.extend(data);
+        let mut buffer: Vec<u8> = header.to_bytes()?;
+        buffer.extend(data);
 
-        let keyword = self.keytable[keyword_index.wrapping_mul(2) as usize];
-        let mut data = header;
-        let mut checksum: [i8; 2] = [0; 2];
-        let mut key_increment = keyword as usize;
-        (4..data.len()).for_each(|i| {
-            let key = self.keytable[(key_increment & 255).wrapping_mul(2).wrapping_add(1)];
+        log::debug!("Sending packet {:?} {:?}", R::IDENTIFIER, buffer);
 
-            checksum[0] = checksum[0].wrapping_add(data[i] as i8);
-            let encoded = data[i] as i8;
-            let result = match i & 3 {
-                0 => encoded.wrapping_add(key.wrapping_shl(1) as i8),
-                1 => encoded.wrapping_sub(key.wrapping_shr(3) as i8),
-                2 => encoded.wrapping_add(key.wrapping_shl(2) as i8),
-                3 => encoded.wrapping_sub(key.wrapping_shr(5) as i8),
+        let mut checksum: [u8; 2] = [0; 2];
+        let key_index = keyword_index as usize * 2;
+        let mut pos = self.keytable[key_index] as i32;
+
+        (4..buffer.len()).for_each(|i| {
+            checksum[0] = checksum[0].wrapping_add(buffer[i]);
+            let rst = pos % 256;
+            let key = self.keytable[(rst * 2 + 1) as usize];
+
+            buffer[i] = match i & 3 {
+                0 => buffer[i].wrapping_add(key.wrapping_shl(1)),
+                1 => buffer[i].wrapping_sub(key.wrapping_shr(3)),
+                2 => buffer[i].wrapping_add(key.wrapping_shl(2)),
+                3 => buffer[i].wrapping_sub(key.wrapping_shr(5)),
                 _ => unreachable!(),
             };
 
-            data[i] = result as u8;
-            checksum[1] = checksum[1].wrapping_add(result as i8);
-            key_increment += 1;
+            checksum[1] = checksum[1].wrapping_add(buffer[i]);
+            pos += 1;
         });
 
-        data[3] = (checksum[1].wrapping_sub(checksum[0])) as u8;
-
-        Ok(data.into())
+        buffer[3] = checksum[1].wrapping_sub(checksum[0]);
+        Ok(buffer.into())
     }
 
     pub fn decrypt(&self, data: &mut [u8]) -> Result<(), EncDecError> {
         let (_, header) = Header::from_bytes((data, 0))?;
         assert_eq!(data.len(), header.size as usize);
 
-        let keyword = header.keyword;
-        let mut pos = self.keytable[keyword.wrapping_mul(2) as usize] as usize;
+        let keyword = header.keyword as u32;
+        let mut pos = self.keytable[(keyword * 2) as usize] as i32;
 
         let mut checksum: [i32; 2] = [0; 2];
         (4..data.len()).for_each(|i| {
-            let key = self.keytable[(pos & 255).wrapping_mul(2).wrapping_add(1)];
+            let key = self.keytable[(pos % 256).wrapping_mul(2).wrapping_add(1) as usize];
             let encoded = data[i] as i8;
 
             checksum[0] += encoded as i32;
@@ -126,7 +123,6 @@ mod tests {
     impl WritableResource for PayloadTest {
         const IDENTIFIER: ServerMessage = ServerMessage::MessagePanel;
         type Output = PayloadTest;
-        const SIZE: u16 = 8;
 
         fn write(self) -> Result<Self::Output, WritableResourceError> {
             Ok(self)
@@ -221,7 +217,6 @@ mod tests {
     impl WritableResource for PayloadWithClientId {
         const IDENTIFIER: ServerMessage = ServerMessage::MessagePanel;
         type Output = PayloadWithClientId;
-        const SIZE: u16 = 4;
 
         fn write(self) -> Result<Self::Output, WritableResourceError> {
             Ok(self)

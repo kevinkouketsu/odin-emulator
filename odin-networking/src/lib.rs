@@ -10,8 +10,6 @@ use thiserror::Error;
 pub trait WritableResource {
     const IDENTIFIER: ServerMessage;
     type Output: DekuWriter + deku::DekuContainerWrite;
-    // TODO: temporary
-    const SIZE: u16;
 
     fn write(self) -> Result<Self::Output, WritableResourceError>;
     fn client_id(&self) -> Option<u16> {
