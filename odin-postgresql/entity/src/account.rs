@@ -11,18 +11,7 @@ pub struct Model {
     pub cash: i32,
     pub access: Option<i32>,
     pub storage_coin: Option<i64>,
-    pub divina: Option<DateTime>,
-    pub sephira: Option<DateTime>,
-    pub saude: Option<DateTime>,
     pub token: Option<String>,
-    pub unique_field: Option<i64>,
-    pub daily_last_year_day: Option<i32>,
-    pub daily_consecutive_days: Option<i32>,
-    pub water_last_year_day: Option<i32>,
-    pub water_total_entries: Option<i32>,
-    pub single_gift: Option<i32>,
-    pub telegram_token: Option<String>,
-    pub change_server_key: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter)]

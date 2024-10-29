@@ -1,4 +1,5 @@
 use entity::account_ban::BanType;
+use extension::postgres::TypeDropStatement;
 use sea_orm::{ActiveEnum, DbBackend, Schema};
 use sea_orm_migration::prelude::*;
 
@@ -39,42 +40,7 @@ impl MigrationTrait for Migration {
                             .big_integer()
                             .default(0),
                     )
-                    .col(ColumnDef::new(Account::Divina).timestamp().null())
-                    .col(ColumnDef::new(Account::Sephira).timestamp().null())
-                    .col(ColumnDef::new(Account::Saude).timestamp().null())
                     .col(ColumnDef::new(Account::Token).string_len(16).null())
-                    .col(
-                        ColumnDef::new(Account::UniqueField)
-                            .big_integer()
-                            .default(0),
-                    )
-                    .col(
-                        ColumnDef::new(Account::DailyLastYearDay)
-                            .integer()
-                            .default(0),
-                    )
-                    .col(
-                        ColumnDef::new(Account::DailyConsecutiveDays)
-                            .integer()
-                            .default(0),
-                    )
-                    .col(
-                        ColumnDef::new(Account::WaterLastYearDay)
-                            .integer()
-                            .default(0),
-                    )
-                    .col(
-                        ColumnDef::new(Account::WaterTotalEntries)
-                            .integer()
-                            .default(0),
-                    )
-                    .col(ColumnDef::new(Account::SingleGift).integer().default(0))
-                    .col(ColumnDef::new(Account::TelegramToken).string_len(16).null())
-                    .col(
-                        ColumnDef::new(Account::ChangeServerKey)
-                            .string_len(52)
-                            .null(),
-                    )
                     .to_owned(),
             )
             .await?;
@@ -99,6 +65,15 @@ impl MigrationTrait for Migration {
 
         manager
             .drop_table(Table::drop().table(Account::Table).to_owned())
+            .await?;
+
+        manager
+            .drop_type(
+                TypeDropStatement::new()
+                    .if_exists()
+                    .name(entity::account_ban::BanType::name())
+                    .to_owned(),
+            )
             .await
     }
 }
@@ -180,18 +155,7 @@ pub enum Account {
     Cash,
     Access,
     StorageCoin,
-    Divina,
-    Sephira,
-    Saude,
     Token,
-    UniqueField,
-    DailyLastYearDay,
-    DailyConsecutiveDays,
-    WaterLastYearDay,
-    WaterTotalEntries,
-    SingleGift,
-    TelegramToken,
-    ChangeServerKey,
 }
 
 #[derive(Iden)]
