@@ -18,11 +18,13 @@ pub struct Model {
 pub enum Relation {
     Character,
 }
-
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::Character => Entity::has_many(crate::character::Entity).into(),
+            Self::Character => Entity::has_many(crate::character::Entity)
+                .from(Column::Id)
+                .to(super::character::Column::GuildId)
+                .into(),
         }
     }
 }

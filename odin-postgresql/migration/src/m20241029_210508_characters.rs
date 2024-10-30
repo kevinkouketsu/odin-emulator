@@ -81,8 +81,8 @@ impl MigrationTrait for Migration {
                             .default(0),
                     )
                     .col(
-                        ColumnDef::new(Character::Gold)
-                            .big_integer()
+                        ColumnDef::new(Character::Coin)
+                            .integer()
                             .not_null()
                             .default(0),
                     )
@@ -221,7 +221,7 @@ impl MigrationTrait for Migration {
 }
 
 #[derive(Iden)]
-enum Character {
+pub enum Character {
     Table,
     Id,
     AccountId,
@@ -232,7 +232,7 @@ enum Character {
     Class,
     AffectInfo,
     QuestInfo,
-    Gold,
+    Coin,
     Experience,
     LastPos,
     Level,

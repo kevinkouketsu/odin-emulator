@@ -8,8 +8,10 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(m20241026_013531_create_accounts_table::Migration),
             Box::new(m20241029_210508_characters::Migration),
+            Box::new(m20241029_222100_items::Migration),
         ]
     }
 }
 mod m20241026_013531_create_accounts_table;
 mod m20241029_210508_characters;
+mod m20241029_222100_items;

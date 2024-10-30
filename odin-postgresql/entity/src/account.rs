@@ -9,7 +9,7 @@ pub struct Model {
     pub username: String,
     pub password: String,
     pub cash: i32,
-    pub access: Option<i32>,
+    pub access: i32,
     pub storage_coin: Option<i64>,
     pub token: Option<String>,
 }

@@ -1,6 +1,6 @@
 use crate::session::Session;
 use chrono::{Local, NaiveDateTime};
-use odin_models::{account::BanType, item::Item, storage::Storage, MAX_EQUIPS};
+use odin_models::{account::BanType, storage::Storage};
 use odin_networking::{
     messages::{
         client::login::LoginMessageRaw,
@@ -31,6 +31,8 @@ impl LoginMessage {
         match self.handle_impl(session, cliver, account_repository).await {
             Ok(charlist) => session.send(charlist).unwrap(),
             Err(err) => {
+                log::error!("{:?}", err);
+
                 let message = match err {
                     AuthenticationError::InvalidCliVer(_) => {
                         "Baixe as atualizações pelo launcher ou pelo site"
@@ -75,44 +77,28 @@ impl LoginMessage {
             }
         }
 
-        let mut equipments = [Item::default(); MAX_EQUIPS];
-        equipments[0] = Item::from((11, 43, 0));
+        let characters = account
+            .charlist
+            .into_iter()
+            .map(|(slot, character)| {
+                (
+                    slot,
+                    CharlistInfo {
+                        position: character.position,
+                        name: character.name,
+                        status: character.status,
+                        equips: character.equipments,
+                        guild: character.guild,
+                        coin: character.coin,
+                        experience: character.experience,
+                    },
+                )
+            })
+            .collect();
 
-        let character = CharlistInfo {
-            position: (2100, 2100).into(),
-            name: "Wed".to_string(),
-            status: Default::default(),
-            equips: equipments,
-            guild: 0,
-            coin: 2100,
-            experience: 2100,
-        };
         let charlist = Charlist {
             token: vec![0; 16],
-            character_info: vec![
-                (0, character.clone()),
-                (
-                    1,
-                    CharlistInfo {
-                        name: "Wed2".to_string(),
-                        ..character.clone()
-                    },
-                ),
-                (
-                    2,
-                    CharlistInfo {
-                        name: "Wed3".to_string(),
-                        ..character.clone()
-                    },
-                ),
-                (
-                    3,
-                    CharlistInfo {
-                        name: "Wed4".to_string(),
-                        ..character
-                    },
-                ),
-            ],
+            character_info: characters,
             storage: Storage::default(),
             account_name: self.username.clone(),
         };
@@ -190,7 +176,10 @@ mod tests {
     use chrono::{Days, Local};
     use deku::prelude::*;
     use futures::FutureExt;
-    use odin_models::account::{Account, Ban, BanType};
+    use odin_models::{
+        account::{Ban, BanType},
+        account_charlist::AccountCharlist,
+    };
     use odin_networking::WritableResource;
     use std::{
         collections::HashMap,
@@ -210,17 +199,21 @@ mod tests {
 
     #[derive(Default, Clone)]
     pub struct MockAccountRepository {
-        accounts: Arc<RwLock<HashMap<String, Account>>>,
+        accounts: Arc<RwLock<HashMap<String, AccountCharlist>>>,
     }
     impl MockAccountRepository {
-        pub fn add_account(&mut self, account: Account) {
+        pub fn add_account(&mut self, account: AccountCharlist) {
             self.accounts
                 .write()
                 .unwrap()
                 .insert(account.username.clone(), account);
         }
 
-        pub fn edit_account<F: FnOnce(&mut Account)>(&mut self, username: &str, callback: F) {
+        pub fn edit_account<F: FnOnce(&mut AccountCharlist)>(
+            &mut self,
+            username: &str,
+            callback: F,
+        ) {
             let mut accounts = self.accounts.write().unwrap();
             let account = accounts.get_mut(username);
 
@@ -230,10 +223,11 @@ mod tests {
     impl From<(&str, &str)> for MockAccountRepository {
         fn from(value: (&str, &str)) -> Self {
             let mut account_repository = MockAccountRepository::default();
-            account_repository.add_account(Account {
+            account_repository.add_account(AccountCharlist {
                 username: value.0.to_string(),
                 password: value.1.to_string(),
                 ban: None,
+                ..Default::default()
             });
 
             account_repository
@@ -243,8 +237,9 @@ mod tests {
         fn fetch_account<'a>(
             &'a self,
             username: &'a str,
-        ) -> Pin<Box<dyn Future<Output = Result<Option<Account>, AccountRepositoryError>> + 'a>>
-        {
+        ) -> Pin<
+            Box<dyn Future<Output = Result<Option<AccountCharlist>, AccountRepositoryError>> + 'a>,
+        > {
             async move {
                 let accounts = self.accounts.read().unwrap();
                 let Some(account) = accounts.get(username) else {
@@ -303,10 +298,11 @@ mod tests {
             AuthenticationError::AccountNotFound
         ));
 
-        account_repository.add_account(Account {
+        account_repository.add_account(AccountCharlist {
             username: "admin".to_string(),
             password: "admin2".to_string(),
             ban: None,
+            ..Default::default()
         });
 
         assert!(matches!(
@@ -325,13 +321,14 @@ mod tests {
             .unwrap()
             .naive_local();
 
-        account_repository.add_account(Account {
+        account_repository.add_account(AccountCharlist {
             username: "admin".to_string(),
             password: "admin".to_string(),
             ban: Some(Ban {
                 expiration,
                 r#type: BanType::Analysis,
             }),
+            ..Default::default()
         });
 
         account_repository.edit_account("admin", |account| {

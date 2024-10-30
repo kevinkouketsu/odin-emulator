@@ -49,15 +49,14 @@ impl WritableResource for Charlist {
 }
 
 #[derive(Debug, Clone)]
-#[repr(C)]
 pub struct CharlistInfo {
     pub position: Position,
     pub name: String,
     pub status: Score,
-    pub equips: [Item; MAX_EQUIPS],
-    pub guild: u16,
+    pub equips: Vec<(usize, Item)>,
+    pub guild: Option<u16>,
     pub coin: u32,
-    pub experience: u64,
+    pub experience: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, DekuRead, DekuWrite)]
@@ -80,7 +79,7 @@ pub struct CharlistInfoRaw {
     pub equipments: [[ItemRaw; MAX_EQUIPS]; 4],
     pub guilds: [u16; 4],
     pub coin: [u32; 4],
-    pub experience: [u64; 4],
+    pub experience: [i64; 4],
 }
 impl From<&Charlist> for CharlistInfoRaw {
     fn from(value: &Charlist) -> Self {
@@ -94,13 +93,15 @@ impl From<&Charlist> for CharlistInfoRaw {
             equipments: map_character_info(&value.character_info, |char| {
                 array::from_fn(|i| {
                     char.equips
-                        .get(i)
-                        .expect("Fixed array size")
-                        .to_owned()
+                        .iter()
+                        .find_map(|(index, item)| (*index == i).then_some(item.to_owned()))
+                        .unwrap_or_default()
                         .into()
                 })
             }),
-            guilds: map_character_info(&value.character_info, |char| char.guild),
+            guilds: map_character_info(&value.character_info, |char| {
+                char.guild.unwrap_or_default()
+            }),
             coin: map_character_info(&value.character_info, |char| char.coin),
             experience: map_character_info(&value.character_info, |char| char.experience),
         }

@@ -34,7 +34,12 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .default(0),
                     )
-                    .col(ColumnDef::new(Account::Access).integer().default(0))
+                    .col(
+                        ColumnDef::new(Account::Access)
+                            .integer()
+                            .default(0)
+                            .not_null(),
+                    )
                     .col(
                         ColumnDef::new(Account::StorageCoin)
                             .big_integer()
