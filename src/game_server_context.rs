@@ -1,6 +1,9 @@
 use crate::{
-    client_id_manager::ClientIdManager, configuration::Configuration,
-    handlers::authentication::CliVer, user_session::UserSession, GameServerSignals,
+    client_id_manager::ClientIdManager,
+    configuration::{Configuration, ServerState},
+    handlers::authentication::CliVer,
+    user_session::UserSession,
+    GameServerSignals,
 };
 use message_io::{network::ResourceId, node::NodeHandler};
 use odin_repositories::account_repository::AccountRepository;
@@ -75,5 +78,9 @@ where
 {
     fn get_current_cliver(&self) -> CliVer {
         self.current_cliver
+    }
+
+    fn get_server_state(&self) -> ServerState {
+        ServerState::Maintenance
     }
 }

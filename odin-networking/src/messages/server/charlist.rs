@@ -48,7 +48,7 @@ impl WritableResource for Charlist {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct CharlistInfo {
     pub position: Position,
     pub name: String,

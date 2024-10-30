@@ -26,11 +26,7 @@ impl Message {
         match self {
             Message::Login(login_message) => {
                 login_message
-                    .handle(
-                        user_session,
-                        configuration.get_current_cliver(),
-                        account_repository,
-                    )
+                    .handle(user_session, configuration, account_repository)
                     .await
             }
             Message::Token => todo!(),

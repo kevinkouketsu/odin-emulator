@@ -1,4 +1,7 @@
-use crate::session::Session;
+use crate::{
+    configuration::{Configuration, ServerState},
+    session::Session,
+};
 use chrono::{Local, NaiveDateTime};
 use odin_models::{account::BanType, storage::Storage};
 use odin_networking::{
@@ -22,13 +25,16 @@ pub struct LoginMessage {
     pub cliver: CliVer,
 }
 impl LoginMessage {
-    pub async fn handle<A: AccountRepository, S: Session>(
+    pub async fn handle<A: AccountRepository, S: Session, C: Configuration>(
         &self,
         session: &S,
-        cliver: CliVer,
+        configuration: &C,
         account_repository: A,
     ) {
-        match self.handle_impl(session, cliver, account_repository).await {
+        match self
+            .handle_impl(session, configuration, account_repository)
+            .await
+        {
             Ok(charlist) => session.send(charlist).unwrap(),
             Err(err) => {
                 log::error!("{:?}", err);
@@ -42,6 +48,7 @@ impl LoginMessage {
                     | AuthenticationError::AccountNotFound => "Usuário ou senha inválidos",
                     AuthenticationError::AccountInAnalysis(_) => "Conta está em análise",
                     AuthenticationError::AccountBlocked(_) => "Conta está banida",
+                    AuthenticationError::Maintenance => "Servidor está em manutenção",
                 };
 
                 session.send::<MessagePanel>(message.into()).unwrap();
@@ -49,13 +56,13 @@ impl LoginMessage {
         }
     }
 
-    async fn handle_impl<A: AccountRepository, S: Session>(
+    async fn handle_impl<A: AccountRepository, S: Session, C: Configuration>(
         &self,
         _session: &S,
-        cliver: CliVer,
+        configuration: &C,
         account_repository: A,
     ) -> Result<Charlist, AuthenticationError> {
-        if self.cliver != cliver {
+        if self.cliver != configuration.get_current_cliver() {
             return Err(AuthenticationError::InvalidCliVer(self.cliver.into()));
         }
 
@@ -66,6 +73,11 @@ impl LoginMessage {
 
         if account.password != self.password {
             return Err(AuthenticationError::InvalidPassword);
+        }
+
+        if configuration.get_server_state() == ServerState::Maintenance && account.access.is_none()
+        {
+            return Err(AuthenticationError::Maintenance);
         }
 
         if let Some(ban) = &account.ban {
@@ -167,18 +179,21 @@ pub enum AuthenticationError {
 
     #[error("Account is blocked until {0}")]
     AccountBlocked(NaiveDateTime),
+
+    #[error("Server is under maintenance")]
+    Maintenance,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::SendError;
+    use crate::{configuration::ServerState, session::SendError};
     use chrono::{Days, Local};
     use deku::prelude::*;
     use futures::FutureExt;
     use odin_models::{
-        account::{Ban, BanType},
-        account_charlist::AccountCharlist,
+        account::{AccessLevel, Ban, BanType},
+        account_charlist::{AccountCharlist, CharacterInfo},
     };
     use odin_networking::WritableResource;
     use std::{
@@ -265,6 +280,17 @@ mod tests {
         }
     }
 
+    struct MockConfiguration(CliVer, ServerState);
+    impl Configuration for MockConfiguration {
+        fn get_current_cliver(&self) -> CliVer {
+            self.0
+        }
+
+        fn get_server_state(&self) -> ServerState {
+            self.1
+        }
+    }
+
     #[tokio::test]
     async fn it_returns_an_error_if_the_cliver_mismatch() {
         let message = get_login_message();
@@ -272,7 +298,7 @@ mod tests {
             message
                 .handle_impl(
                     &MockSession::default(),
-                    CliVer::new(2),
+                    &MockConfiguration(CliVer::new(2), ServerState::Open),
                     MockAccountRepository::default()
                 )
                 .await,
@@ -290,7 +316,7 @@ mod tests {
             message
                 .handle_impl(
                     &MockSession::default(),
-                    CliVer::new(1),
+                    &MockConfiguration(CliVer::new(1), ServerState::Open),
                     account_repository.clone()
                 )
                 .await
@@ -307,7 +333,11 @@ mod tests {
 
         assert!(matches!(
             message
-                .handle_impl(&MockSession::default(), CliVer::new(1), account_repository)
+                .handle_impl(
+                    &MockSession::default(),
+                    &MockConfiguration(CliVer::new(1), ServerState::Open),
+                    account_repository
+                )
                 .await,
             Err(AuthenticationError::InvalidPassword)
         ));
@@ -338,29 +368,111 @@ mod tests {
         let message = get_login_message();
         assert!(matches!(
             message
-                .handle_impl(&MockSession::default(), CliVer::new(1), account_repository)
+                .handle_impl(
+                    &MockSession::default(),
+                    &MockConfiguration(CliVer::new(1), ServerState::Open),
+                    account_repository
+                )
                 .await,
             Err(AuthenticationError::AccountBlocked(_))
         ));
     }
 
-    // #[tokio::test]
-    // async fn it_sends_the_charlist_to_the_user() {
-    //     let message = get_login_message();
-    //     let account_repository = MockAccountRepository::from(("admin", "admin"));
+    #[tokio::test]
+    async fn successful_login_returns_the_charlist() {
+        let mut account_repository = MockAccountRepository::default();
+        let charlist_info = CharacterInfo {
+            position: (2100, 2100).into(),
+            name: "charlist".to_string(),
+            ..Default::default()
+        };
 
-    //     let session = MockSession::default();
-    //     MockSession::default();
-    //     assert!(message
-    //         .handle_impl(&session, CliVer::new(1), account_repository)
-    //         .await
-    //         .is_ok());
+        account_repository.add_account(AccountCharlist {
+            username: "admin".to_string(),
+            password: "admin".to_string(),
+            charlist: vec![(0, charlist_info)],
+            ..Default::default()
+        });
 
-    //     let message = session
-    //         .messages
-    //         .try_read()
-    //         .unwrap()
-    //         .first()
-    //         .expect("Must have a message");
-    // }
+        let session = MockSession::default();
+        let charlist = get_login_message()
+            .handle_impl(
+                &session,
+                &MockConfiguration(CliVer::new(1), ServerState::Open),
+                account_repository,
+            )
+            .await
+            .expect("Must login successfully");
+
+        let (index, character) = &charlist.character_info[0];
+        assert_eq!(*index, 0);
+        assert_eq!(character.name, "charlist");
+        assert_eq!(character.position, (2100, 2100).into());
+    }
+
+    #[tokio::test]
+    async fn it_cant_login_when_server_is_closed_for_maintenance_and_the_access_is_normal() {
+        let mut account_repository = MockAccountRepository::default();
+        account_repository.add_account(AccountCharlist {
+            username: "admin".to_string(),
+            password: "admin".to_string(),
+            access: None,
+            ..Default::default()
+        });
+
+        assert_eq!(
+            get_login_message()
+                .handle_impl(
+                    &MockSession::default(),
+                    &MockConfiguration(CliVer::new(1), ServerState::Maintenance),
+                    account_repository
+                )
+                .await
+                .unwrap_err(),
+            AuthenticationError::Maintenance
+        )
+    }
+
+    #[tokio::test]
+    async fn it_cant_login_when_server_is_closed_for_maintenance_and_the_access_is_gamemaster_or_admin(
+    ) {
+        let mut account_repository = MockAccountRepository::default();
+        account_repository.add_account(AccountCharlist {
+            username: "admin".to_string(),
+            password: "admin".to_string(),
+            access: Some(AccessLevel::Administrator),
+            ..Default::default()
+        });
+        account_repository.add_account(AccountCharlist {
+            username: "admin2".to_string(),
+            password: "admin".to_string(),
+            access: Some(AccessLevel::GameMaster(1)),
+            ..Default::default()
+        });
+
+        let result = get_login_message()
+            .handle_impl(
+                &MockSession::default(),
+                &MockConfiguration(CliVer::new(1), ServerState::Maintenance),
+                account_repository.clone(),
+            )
+            .await;
+
+        assert!(result.is_ok());
+
+        let result = LoginMessage {
+            username: "admin2".to_string(),
+            password: "admin".to_string(),
+            tid: [0; 52],
+            cliver: CliVer::new(1u32),
+        }
+        .handle_impl(
+            &MockSession::default(),
+            &MockConfiguration(CliVer::new(1), ServerState::Maintenance),
+            account_repository,
+        )
+        .await;
+
+        assert!(result.is_ok())
+    }
 }
