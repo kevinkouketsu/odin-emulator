@@ -1,22 +1,39 @@
 use crate::{
-    session::{SendError, Session},
+    game_server_context::GameServerContext,
+    message::Message,
+    session::{SessionError, SessionTrait},
     GameServerSignals,
 };
 use message_io::{
     network::{Endpoint, ResourceId},
     node::NodeHandler,
 };
+use odin_models::account_charlist::AccountCharlist;
 use odin_networking::{
     enc_session::{EncDecError, EncDecSession},
     framed_message::HandshakeState,
     WritableResource,
 };
+use odin_repositories::account_repository::AccountRepository;
+
+#[derive(Default)]
+pub enum Session {
+    #[default]
+    LoggingIn,
+    Charlist {
+        account_charlist: AccountCharlist,
+    },
+    CharlistWithToken {
+        account_charlist: AccountCharlist,
+    },
+}
 
 pub struct UserSession {
     handler: NodeHandler<GameServerSignals>,
     endpoint: Endpoint,
     encdec_session: EncDecSession,
     framed_message: HandshakeState,
+    session: Session,
 }
 impl UserSession {
     pub fn new(
@@ -29,6 +46,49 @@ impl UserSession {
             endpoint,
             encdec_session,
             framed_message: Default::default(),
+            session: Session::default(),
+        }
+    }
+
+    pub async fn handle<A: AccountRepository>(
+        &mut self,
+        context: &GameServerContext<A>,
+        message: Message,
+    ) {
+        let session = self.get_sender();
+        match &self.session {
+            Session::LoggingIn => {
+                if let Message::Login(login_message) = message {
+                    if let Ok(account_charlist) = login_message
+                        .handle(&session, context, context.account_repository.clone())
+                        .await
+                    {
+                        self.session = Session::Charlist { account_charlist }
+                    }
+                }
+            }
+            Session::Charlist { account_charlist }
+            | Session::CharlistWithToken { account_charlist } => match message {
+                Message::Token(token_message) => {
+                    let r = token_message
+                        .handle(
+                            &session,
+                            account_charlist.identifier,
+                            matches!(self.session, Session::CharlistWithToken { .. }),
+                            context.account_repository.clone(),
+                        )
+                        .await;
+
+                    if r.is_ok() && matches!(self.session, Session::Charlist { .. }) {
+                        self.session = Session::CharlistWithToken {
+                            account_charlist: account_charlist.clone(),
+                        }
+                    }
+                }
+                _ => {
+                    panic!("Not implemented yet")
+                }
+            },
         }
     }
 
@@ -44,16 +104,28 @@ impl UserSession {
         self.framed_message.next_message()
     }
 
-    pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, EncDecError> {
-        let mut output = vec![0; data.len()];
-        output.copy_from_slice(data);
-        self.encdec_session.decrypt(&mut output)?;
+    pub fn decrypt(&self, data: &mut [u8]) -> Result<(), EncDecError> {
+        self.encdec_session.decrypt(data)?;
 
-        Ok(output)
+        Ok(())
+    }
+
+    fn get_sender(&self) -> SenderSession {
+        SenderSession {
+            encdec_session: self.encdec_session.clone(),
+            endpoint: self.endpoint,
+            handler: self.handler.clone(),
+        }
     }
 }
-impl Session for UserSession {
-    fn send<R: WritableResource>(&self, message: R) -> Result<(), SendError> {
+
+pub struct SenderSession {
+    handler: NodeHandler<GameServerSignals>,
+    encdec_session: EncDecSession,
+    endpoint: Endpoint,
+}
+impl SessionTrait for SenderSession {
+    fn send<R: WritableResource>(&self, message: R) -> Result<(), SessionError> {
         let bytes = self.encdec_session.encrypt::<R>(message)?;
 
         self.handler.network().send(self.endpoint, &bytes);

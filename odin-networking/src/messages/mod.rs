@@ -34,6 +34,8 @@ impl TryFrom<u16> for ClientMessage {
 pub enum ServerMessage {
     MessagePanel,
     FirstCharlist,
+    CorrectNumericToken,
+    IncorrectNumericToken,
 }
 impl TryFrom<ServerMessage> for u16 {
     type Error = InvalidMessageType;
@@ -42,6 +44,8 @@ impl TryFrom<ServerMessage> for u16 {
         Ok(match value {
             ServerMessage::MessagePanel => 0x101,
             ServerMessage::FirstCharlist => 0x10A,
+            ServerMessage::CorrectNumericToken => 0xFDE,
+            ServerMessage::IncorrectNumericToken => 0xFDF,
         })
     }
 }

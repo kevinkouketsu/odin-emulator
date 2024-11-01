@@ -21,6 +21,7 @@ use odin_postgresql::PostgreSqlService;
 use std::{
     io,
     net::{SocketAddr, ToSocketAddrs},
+    rc::Rc,
 };
 use user_session::UserSession;
 
@@ -129,7 +130,7 @@ impl GameServer {
                             }
                         };
 
-                        let keytable = std::rc::Rc::new(KEYTABLE);
+                        let keytable = Rc::new(KEYTABLE);
                         context.add_session(
                             client_id,
                             UserSession::new(
@@ -160,26 +161,17 @@ impl GameServer {
                         let mut session = session.write().await;
                         session.feed_with_message(&message);
 
-                        while let Some(message) = session.next_message() {
-                            let decrypted_message = match session.decrypt(&message) {
-                                Ok(decrypted_message) => decrypted_message,
-                                Err(e) => {
-                                    log::error!("Fail to decrypt packet: {:?}", e);
+                        while let Some(mut message) = session.next_message() {
+                            if let Err(e) = session.decrypt(&mut message) {
+                                log::error!("Fail to decrypt packet: {:?}", e);
 
-                                    continue;
-                                }
+                                continue;
                             };
 
-                            let (_, header) = Header::from_bytes((&decrypted_message, 0))
+                            let (rest, header) = Header::from_bytes((&message, 0))
                                 .expect("Could not parse header this is very strange");
 
-                            let message = match Message::try_from((
-                                (
-                                    &decrypted_message.as_slice()[std::mem::size_of::<Header>()..],
-                                    0,
-                                ),
-                                header,
-                            )) {
+                            let message = match Message::try_from((rest, header)) {
                                 Ok(message) => message,
                                 Err(MessageError::NotImplemented(header)) => {
                                     log::error!(
@@ -203,13 +195,8 @@ impl GameServer {
                                 }
                             };
 
-                            log::info!(
-                                "{:?}",
-                                message
-                                    .handle(&session, &context, context.account_repository.clone())
-                                    .await
-                            );
                             log::info!("Received packet {:?} from {}", message, client_id);
+                            session.handle(&context, message).await;
                         }
                     }
                     StoredNetEvent::Disconnected(endpoint) => {

@@ -17,7 +17,7 @@ pub trait WritableResource {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum WritableResourceError {
     #[error(transparent)]
     InvalidCString(#[from] IntoStringError),

@@ -1,39 +1,22 @@
-use crate::{
-    configuration::Configuration,
-    handlers::authentication::{AuthenticationError, LoginMessage},
-    user_session::UserSession,
+use crate::handlers::{
+    authentication::{AuthenticationError, LoginMessage},
+    numeric_token::NumericToken,
 };
 use deku::prelude::*;
 use odin_networking::{
-    messages::{client::login::LoginMessageRaw, header::Header, ClientMessage},
+    messages::{
+        client::{login::LoginMessageRaw, numeric_token::NumericTokenRaw},
+        header::Header,
+        ClientMessage,
+    },
     WritableResourceError,
 };
-use odin_repositories::account_repository::AccountRepository;
 use thiserror::Error;
 
 #[derive(Debug)]
 pub enum Message {
     Login(LoginMessage),
-    Token,
-}
-impl Message {
-    pub async fn handle<A: AccountRepository, C: Configuration>(
-        &self,
-        user_session: &UserSession,
-        configuration: &C,
-        account_repository: A,
-    ) -> Result<(), MessageError> {
-        match self {
-            Message::Login(login_message) => {
-                login_message
-                    .handle(user_session, configuration, account_repository)
-                    .await
-            }
-            Message::Token => todo!(),
-        };
-
-        Ok(())
-    }
+    Token(NumericToken),
 }
 impl TryFrom<((&[u8], usize), Header)> for Message {
     type Error = MessageError;
@@ -46,7 +29,9 @@ impl TryFrom<((&[u8], usize), Header)> for Message {
             ClientMessage::Login => {
                 Message::Login(LoginMessageRaw::from_bytes(rest)?.1.try_into()?)
             }
-            ClientMessage::Token => return Err(MessageError::NotImplemented(header)),
+            ClientMessage::Token => {
+                Message::Token(NumericTokenRaw::from_bytes(rest)?.1.try_into()?)
+            }
         })
     }
 }

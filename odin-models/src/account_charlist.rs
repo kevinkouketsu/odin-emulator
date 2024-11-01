@@ -6,15 +6,16 @@ use crate::{
     status::Score,
     storage::Storage,
 };
+use uuid::Uuid;
 
 #[derive(Debug, Default, Clone)]
 pub struct AccountCharlist {
+    pub identifier: Uuid,
     pub username: String,
     pub password: String,
     pub ban: Option<Ban>,
     pub access: Option<AccessLevel>,
     pub storage: Storage,
-    pub token: Option<String>,
     pub charlist: Vec<(usize, CharacterInfo)>,
 }
 

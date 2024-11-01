@@ -8,7 +8,7 @@ use thiserror::Error;
 const KEYTABLE_LENGHT: usize = 512;
 const HALF_KEYTABLE_LENGTH: usize = 255;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EncDecSession {
     keytable: Rc<[u8; 512]>,
     id: u16,
@@ -98,7 +98,7 @@ impl EncDecSession {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum EncDecError {
     #[error("Invalid checksum {0} {1}")]
     InvalidChecksum(u8, u8),

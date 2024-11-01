@@ -95,7 +95,7 @@ impl<const N: usize> TryFrom<&str> for FixedSizeString<N> {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum FixedSizeStringError {
     #[error("The string size is bigger than the fixed size: {0} {0}")]
     InvalidSize(String, usize),

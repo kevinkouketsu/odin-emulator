@@ -15,7 +15,7 @@ use odin_models::{
     status::Score,
 };
 use odin_repositories::account_repository::{AccountRepository, AccountRepositoryError};
-use sea_orm::{prelude::*, DatabaseConnection, QueryOrder};
+use sea_orm::{prelude::*, ActiveValue, DatabaseConnection, QueryOrder, SelectColumns, Set};
 use std::{future::Future, pin::Pin};
 
 #[derive(Clone)]
@@ -131,6 +131,7 @@ impl AccountRepository for PostgreSqlAccountRepository {
             }
 
             Ok(Some(AccountCharlist {
+                identifier: account.id,
                 username: account.username,
                 password: account.password,
                 ban: ban.map(|ban| Ban {
@@ -142,9 +143,46 @@ impl AccountRepository for PostgreSqlAccountRepository {
                 }),
                 access,
                 storage: Default::default(),
-                token: account.token,
                 charlist,
             }))
+        }
+        .boxed()
+    }
+
+    fn update_token<'a>(
+        &'a self,
+        id: Uuid,
+        new_token: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), AccountRepositoryError>> + 'a>> {
+        async move {
+            let account = entity::account::ActiveModel {
+                id: ActiveValue::Unchanged(id),
+                token: Set(new_token.map(Into::into)),
+                ..Default::default()
+            };
+
+            AccountEntity::update(account)
+                .exec(&self.connection)
+                .await
+                .map_err(|e| AccountRepositoryError::FailToLoad(e.to_string()))?;
+
+            Ok(())
+        }
+        .boxed()
+    }
+
+    fn get_token<'a>(
+        &'a self,
+        id: Uuid,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<String>, AccountRepositoryError>> + 'a>> {
+        async move {
+            Ok(AccountEntity::find()
+                .filter(entity::account::Column::Id.eq(id))
+                .select_column(entity::account::Column::Token)
+                .one(&self.connection)
+                .await
+                .map_err(|e| AccountRepositoryError::FailToLoad(e.to_string()))?
+                .and_then(|x| x.token))
         }
         .boxed()
     }

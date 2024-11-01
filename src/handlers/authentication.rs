@@ -1,9 +1,9 @@
 use crate::{
     configuration::{Configuration, ServerState},
-    session::Session,
+    session::{SessionError, SessionTrait},
 };
 use chrono::{Local, NaiveDateTime};
-use odin_models::{account::BanType, storage::Storage};
+use odin_models::{account::BanType, account_charlist::AccountCharlist, storage::Storage};
 use odin_networking::{
     messages::{
         client::login::LoginMessageRaw,
@@ -25,17 +25,17 @@ pub struct LoginMessage {
     pub cliver: CliVer,
 }
 impl LoginMessage {
-    pub async fn handle<A: AccountRepository, S: Session, C: Configuration>(
+    pub async fn handle<A: AccountRepository, S: SessionTrait, C: Configuration>(
         &self,
         session: &S,
         configuration: &C,
         account_repository: A,
-    ) {
+    ) -> Result<AccountCharlist, AuthenticationError> {
         match self
             .handle_impl(session, configuration, account_repository)
             .await
         {
-            Ok(charlist) => session.send(charlist).unwrap(),
+            Ok(charlist) => Ok(charlist),
             Err(err) => {
                 log::error!("{:?}", err);
 
@@ -45,23 +45,25 @@ impl LoginMessage {
                     }
                     AuthenticationError::AccountRepositoryError(_)
                     | AuthenticationError::InvalidPassword
-                    | AuthenticationError::AccountNotFound => "Usuário ou senha inválidos",
+                    | AuthenticationError::AccountNotFound
+                    | AuthenticationError::SendError(_) => "Usuário ou senha inválidos",
                     AuthenticationError::AccountInAnalysis(_) => "Conta está em análise",
                     AuthenticationError::AccountBlocked(_) => "Conta está banida",
                     AuthenticationError::Maintenance => "Servidor está em manutenção",
                 };
 
                 session.send::<MessagePanel>(message.into()).unwrap();
+                Err(err)
             }
         }
     }
 
-    async fn handle_impl<A: AccountRepository, S: Session, C: Configuration>(
+    async fn handle_impl<A: AccountRepository, S: SessionTrait, C: Configuration>(
         &self,
-        _session: &S,
+        session: &S,
         configuration: &C,
         account_repository: A,
-    ) -> Result<Charlist, AuthenticationError> {
+    ) -> Result<AccountCharlist, AuthenticationError> {
         if self.cliver != configuration.get_current_cliver() {
             return Err(AuthenticationError::InvalidCliVer(self.cliver.into()));
         }
@@ -91,15 +93,15 @@ impl LoginMessage {
 
         let characters = account
             .charlist
-            .into_iter()
+            .iter()
             .map(|(slot, character)| {
                 (
-                    slot,
+                    *slot,
                     CharlistInfo {
                         position: character.position,
-                        name: character.name,
+                        name: character.name.clone(),
                         status: character.status,
-                        equips: character.equipments,
+                        equips: character.equipments.clone(),
                         guild: character.guild,
                         coin: character.coin,
                         experience: character.experience,
@@ -115,7 +117,8 @@ impl LoginMessage {
             account_name: self.username.clone(),
         };
 
-        Ok(charlist)
+        session.send(charlist)?;
+        Ok(account)
     }
 }
 impl TryFrom<LoginMessageRaw> for LoginMessage {
@@ -182,25 +185,25 @@ pub enum AuthenticationError {
 
     #[error("Server is under maintenance")]
     Maintenance,
+
+    #[error(transparent)]
+    SendError(#[from] SessionError),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{configuration::ServerState, session::SendError};
+    use crate::{
+        configuration::ServerState,
+        handlers::tests::{
+            MockAccountCharlist, MockAccountRepository, MockConfiguration, MockSession,
+        },
+    };
     use chrono::{Days, Local};
-    use deku::prelude::*;
-    use futures::FutureExt;
     use odin_models::{
         account::{AccessLevel, Ban, BanType},
         account_charlist::{AccountCharlist, CharacterInfo},
-    };
-    use odin_networking::WritableResource;
-    use std::{
-        collections::HashMap,
-        future::Future,
-        pin::Pin,
-        sync::{Arc, RwLock},
+        uuid::Uuid,
     };
 
     fn get_login_message() -> LoginMessage {
@@ -209,85 +212,6 @@ mod tests {
             password: "admin".to_string(),
             tid: [0; 52],
             cliver: CliVer::new(1u32),
-        }
-    }
-
-    #[derive(Default, Clone)]
-    pub struct MockAccountRepository {
-        accounts: Arc<RwLock<HashMap<String, AccountCharlist>>>,
-    }
-    impl MockAccountRepository {
-        pub fn add_account(&mut self, account: AccountCharlist) {
-            self.accounts
-                .write()
-                .unwrap()
-                .insert(account.username.clone(), account);
-        }
-
-        pub fn edit_account<F: FnOnce(&mut AccountCharlist)>(
-            &mut self,
-            username: &str,
-            callback: F,
-        ) {
-            let mut accounts = self.accounts.write().unwrap();
-            let account = accounts.get_mut(username);
-
-            callback(account.unwrap());
-        }
-    }
-    impl From<(&str, &str)> for MockAccountRepository {
-        fn from(value: (&str, &str)) -> Self {
-            let mut account_repository = MockAccountRepository::default();
-            account_repository.add_account(AccountCharlist {
-                username: value.0.to_string(),
-                password: value.1.to_string(),
-                ban: None,
-                ..Default::default()
-            });
-
-            account_repository
-        }
-    }
-    impl AccountRepository for MockAccountRepository {
-        fn fetch_account<'a>(
-            &'a self,
-            username: &'a str,
-        ) -> Pin<
-            Box<dyn Future<Output = Result<Option<AccountCharlist>, AccountRepositoryError>> + 'a>,
-        > {
-            async move {
-                let accounts = self.accounts.read().unwrap();
-                let Some(account) = accounts.get(username) else {
-                    return Ok(None);
-                };
-
-                Ok(Some(account.clone()))
-            }
-            .boxed()
-        }
-    }
-
-    #[derive(Default)]
-    pub struct MockSession {
-        messages: RwLock<Vec<Vec<u8>>>,
-    }
-    impl Session for MockSession {
-        fn send<R: WritableResource>(&self, message: R) -> Result<(), SendError> {
-            let message: Vec<u8> = message.write().unwrap().to_bytes().unwrap();
-            self.messages.try_write().unwrap().push(message);
-
-            Ok(())
-        }
-    }
-
-    struct MockConfiguration(CliVer, ServerState);
-    impl Configuration for MockConfiguration {
-        fn get_current_cliver(&self) -> CliVer {
-            self.0
-        }
-
-        fn get_server_state(&self) -> ServerState {
-            self.1
         }
     }
 
@@ -324,10 +248,14 @@ mod tests {
             AuthenticationError::AccountNotFound
         ));
 
-        account_repository.add_account(AccountCharlist {
-            username: "admin".to_string(),
-            password: "admin2".to_string(),
-            ban: None,
+        account_repository.add_account(MockAccountCharlist {
+            account_charlist: AccountCharlist {
+                identifier: Uuid::new_v4(),
+                username: "admin".to_string(),
+                password: "admin2".to_string(),
+                ban: None,
+                ..Default::default()
+            },
             ..Default::default()
         });
 
@@ -351,18 +279,22 @@ mod tests {
             .unwrap()
             .naive_local();
 
-        account_repository.add_account(AccountCharlist {
-            username: "admin".to_string(),
-            password: "admin".to_string(),
-            ban: Some(Ban {
-                expiration,
-                r#type: BanType::Analysis,
-            }),
+        account_repository.add_account(MockAccountCharlist {
+            account_charlist: AccountCharlist {
+                identifier: Uuid::new_v4(),
+                username: "admin".to_string(),
+                password: "admin".to_string(),
+                ban: Some(Ban {
+                    expiration,
+                    r#type: BanType::Analysis,
+                }),
+                ..Default::default()
+            },
             ..Default::default()
         });
 
         account_repository.edit_account("admin", |account| {
-            account.ban.as_mut().unwrap().r#type = BanType::Blocked
+            account.account_charlist.ban.as_mut().unwrap().r#type = BanType::Blocked
         });
 
         let message = get_login_message();
@@ -387,10 +319,14 @@ mod tests {
             ..Default::default()
         };
 
-        account_repository.add_account(AccountCharlist {
-            username: "admin".to_string(),
-            password: "admin".to_string(),
-            charlist: vec![(0, charlist_info)],
+        account_repository.add_account(MockAccountCharlist {
+            account_charlist: AccountCharlist {
+                identifier: Uuid::new_v4(),
+                username: "admin".to_string(),
+                password: "admin".to_string(),
+                charlist: vec![(0, charlist_info)],
+                ..Default::default()
+            },
             ..Default::default()
         });
 
@@ -404,7 +340,7 @@ mod tests {
             .await
             .expect("Must login successfully");
 
-        let (index, character) = &charlist.character_info[0];
+        let (index, character) = &charlist.charlist[0];
         assert_eq!(*index, 0);
         assert_eq!(character.name, "charlist");
         assert_eq!(character.position, (2100, 2100).into());
@@ -413,10 +349,14 @@ mod tests {
     #[tokio::test]
     async fn it_cant_login_when_server_is_closed_for_maintenance_and_the_access_is_normal() {
         let mut account_repository = MockAccountRepository::default();
-        account_repository.add_account(AccountCharlist {
-            username: "admin".to_string(),
-            password: "admin".to_string(),
-            access: None,
+        account_repository.add_account(MockAccountCharlist {
+            account_charlist: AccountCharlist {
+                identifier: Uuid::new_v4(),
+                username: "admin".to_string(),
+                password: "admin".to_string(),
+                access: None,
+                ..Default::default()
+            },
             ..Default::default()
         });
 
@@ -434,19 +374,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn it_cant_login_when_server_is_closed_for_maintenance_and_the_access_is_gamemaster_or_admin(
+    async fn it_can_login_when_server_is_closed_for_maintenance_and_the_access_is_gamemaster_or_admin(
     ) {
         let mut account_repository = MockAccountRepository::default();
-        account_repository.add_account(AccountCharlist {
-            username: "admin".to_string(),
-            password: "admin".to_string(),
-            access: Some(AccessLevel::Administrator),
+        account_repository.add_account(MockAccountCharlist {
+            account_charlist: AccountCharlist {
+                identifier: Uuid::new_v4(),
+                username: "admin".to_string(),
+                password: "admin".to_string(),
+                access: Some(AccessLevel::Administrator),
+                ..Default::default()
+            },
             ..Default::default()
         });
-        account_repository.add_account(AccountCharlist {
-            username: "admin2".to_string(),
-            password: "admin".to_string(),
-            access: Some(AccessLevel::GameMaster(1)),
+        account_repository.add_account(MockAccountCharlist {
+            account_charlist: AccountCharlist {
+                identifier: Uuid::new_v4(),
+                username: "admin2".to_string(),
+                password: "admin".to_string(),
+                access: Some(AccessLevel::GameMaster(1)),
+                ..Default::default()
+            },
             ..Default::default()
         });
 
