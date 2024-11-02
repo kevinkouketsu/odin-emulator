@@ -17,7 +17,8 @@ Configurations are still under development, so options such as client version (c
 ## Planned Features
 - [x] Message encryption and decryption
 - [x] Receive and parse messages
-- [ ] Login to the character select screen
+- [x] Login to the character select screen
+- [x] Numeric token
 - [ ] Validate and send account data
 - [ ] Create character
 - [ ] Delete character
