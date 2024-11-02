@@ -11,5 +11,6 @@ deku = "0.18.0"
 rand = "0.8.5"
 futures = "0.3.29"
 thiserror = "1.0.50"
+odin-macros = { path = "../odin-macros" }
 odin-models = { path = "../odin-models" }
 log = "0.4.22"

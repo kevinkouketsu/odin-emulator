@@ -3,6 +3,7 @@ use crate::{
     messages::{client::numeric_token::NumericTokenRaw, ServerMessage},
     WritableResource, WritableResourceError,
 };
+use odin_macros::MessageSignalDerive;
 
 pub struct CorrectNumericToken {
     pub token: String,
@@ -20,13 +21,6 @@ impl WritableResource for CorrectNumericToken {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, MessageSignalDerive)]
+#[identifier = "ServerMessage::IncorrectNumericToken"]
 pub struct IncorrectNumericToken;
-impl WritableResource for IncorrectNumericToken {
-    const IDENTIFIER: ServerMessage = ServerMessage::IncorrectNumericToken;
-    type Output = MessageSignal<IncorrectNumericToken>;
-
-    fn write(self) -> Result<Self::Output, WritableResourceError> {
-        Ok(MessageSignal::default())
-    }
-}

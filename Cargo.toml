@@ -28,6 +28,7 @@ chrono = "0.4.38"
 [workspace]
 members = [
     "odin-models",
+    "odin-macros",
     "odin-networking",
     "odin-postgresql",
     "odin-postgresql/entity",

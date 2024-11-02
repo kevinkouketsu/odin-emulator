@@ -1540,6 +1540,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "odin-macros"
+version = "0.1.0"
+dependencies = [
+ "darling",
+ "quote",
+ "syn 2.0.85",
+]
+
+[[package]]
 name = "odin-models"
 version = "0.1.0"
 dependencies = [
@@ -1556,6 +1565,7 @@ dependencies = [
  "deku",
  "futures",
  "log",
+ "odin-macros",
  "odin-models",
  "rand",
  "thiserror",

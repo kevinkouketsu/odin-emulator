@@ -1,0 +1,14 @@
+[package]
+name = "odin-macros"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "odin_macros"
+path = "src/lib.rs"
+proc-macro = true
+
+[dependencies]
+darling = "0.20.10"
+quote = "1.0"
+syn = { version = "2.0.59" }
