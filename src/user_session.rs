@@ -22,9 +22,7 @@ pub enum Session {
     LoggingIn,
     Charlist {
         account_charlist: AccountCharlist,
-    },
-    CharlistWithToken {
-        account_charlist: AccountCharlist,
+        token: bool,
     },
 }
 
@@ -56,38 +54,39 @@ impl UserSession {
         message: Message,
     ) {
         let session = self.get_sender();
-        match &self.session {
+        match &mut self.session {
             Session::LoggingIn => {
                 if let Message::Login(login_message) = message {
                     if let Ok(account_charlist) = login_message
                         .handle(&session, context, context.account_repository.clone())
                         .await
                     {
-                        self.session = Session::Charlist { account_charlist }
+                        self.session = Session::Charlist {
+                            account_charlist,
+                            token: false,
+                        }
                     }
                 }
             }
-            Session::Charlist { account_charlist }
-            | Session::CharlistWithToken { account_charlist } => match message {
+            Session::Charlist {
+                account_charlist,
+                token,
+            } => match message {
                 Message::Token(token_message) => {
                     let r = token_message
                         .handle(
                             &session,
                             account_charlist.identifier,
-                            matches!(self.session, Session::CharlistWithToken { .. }),
+                            *token,
                             context.account_repository.clone(),
                         )
                         .await;
 
-                    if r.is_ok() && matches!(self.session, Session::Charlist { .. }) {
-                        self.session = Session::CharlistWithToken {
-                            account_charlist: account_charlist.clone(),
-                        }
+                    if r.is_ok() {
+                        *token = true;
                     }
                 }
-                _ => {
-                    panic!("Not implemented yet")
-                }
+                message => log::error!("Got a message in incorrect state: {:?}", message),
             },
         }
     }
