@@ -2,6 +2,7 @@ pub mod account;
 pub mod account_charlist;
 pub mod character;
 pub mod item;
+pub mod nickname;
 pub mod position;
 pub mod status;
 pub mod storage;

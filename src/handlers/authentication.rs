@@ -8,7 +8,7 @@ use odin_networking::{
     messages::{
         client::login::LoginMessageRaw,
         server::{
-            charlist::{Charlist, CharlistInfo},
+            charlist::{CharlistInfo, FirstCharlist},
             message_panel::MessagePanel,
         },
     },
@@ -18,13 +18,13 @@ use odin_repositories::account_repository::{AccountRepository, AccountRepository
 use thiserror::Error;
 
 #[derive(Debug)]
-pub struct LoginMessage {
+pub struct Authentication {
     pub username: String,
     pub password: String,
     pub tid: [u8; 52],
     pub cliver: CliVer,
 }
-impl LoginMessage {
+impl Authentication {
     pub async fn handle<A: AccountRepository, S: SessionTrait, C: Configuration>(
         &self,
         session: &S,
@@ -110,7 +110,7 @@ impl LoginMessage {
             })
             .collect();
 
-        let charlist = Charlist {
+        let charlist = FirstCharlist {
             token: vec![0; 16],
             character_info: characters,
             storage: Storage::default(),
@@ -121,14 +121,14 @@ impl LoginMessage {
         Ok(account)
     }
 }
-impl TryFrom<LoginMessageRaw> for LoginMessage {
+impl TryFrom<LoginMessageRaw> for Authentication {
     type Error = WritableResourceError;
 
     fn try_from(value: LoginMessageRaw) -> Result<Self, Self::Error> {
         let username: String = value.username.try_into()?;
         let password: String = value.password.try_into()?;
 
-        Ok(LoginMessage {
+        Ok(Authentication {
             username,
             password,
             tid: value.tid,
@@ -206,8 +206,8 @@ mod tests {
         uuid::Uuid,
     };
 
-    fn get_login_message() -> LoginMessage {
-        LoginMessage {
+    fn get_login_message() -> Authentication {
+        Authentication {
             username: "admin".to_string(),
             password: "admin".to_string(),
             tid: [0; 52],
@@ -408,7 +408,7 @@ mod tests {
 
         assert!(result.is_ok());
 
-        let result = LoginMessage {
+        let result = Authentication {
             username: "admin2".to_string(),
             password: "admin".to_string(),
             tid: [0; 52],

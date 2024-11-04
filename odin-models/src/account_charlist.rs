@@ -21,6 +21,7 @@ pub struct AccountCharlist {
 
 #[derive(Debug, Default, Clone)]
 pub struct CharacterInfo {
+    pub identifier: Uuid,
     pub name: String,
     pub status: Score,
     pub guild: Option<u16>,

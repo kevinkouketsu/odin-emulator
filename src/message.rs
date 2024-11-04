@@ -1,11 +1,15 @@
 use crate::handlers::{
-    authentication::{AuthenticationError, LoginMessage},
+    authentication::{Authentication, AuthenticationError},
+    create_character::CreateCharacter,
     numeric_token::NumericToken,
 };
 use deku::prelude::*;
 use odin_networking::{
     messages::{
-        client::{login::LoginMessageRaw, numeric_token::NumericTokenRaw},
+        client::{
+            create_character::CreateCharacterRaw, login::LoginMessageRaw,
+            numeric_token::NumericTokenRaw,
+        },
         header::Header,
         ClientMessage,
     },
@@ -15,8 +19,9 @@ use thiserror::Error;
 
 #[derive(Debug)]
 pub enum Message {
-    Login(LoginMessage),
+    Login(Authentication),
     Token(NumericToken),
+    CreateCharacter(CreateCharacter),
 }
 impl TryFrom<((&[u8], usize), Header)> for Message {
     type Error = MessageError;
@@ -31,6 +36,9 @@ impl TryFrom<((&[u8], usize), Header)> for Message {
             }
             ClientMessage::Token => {
                 Message::Token(NumericTokenRaw::from_bytes(rest)?.1.try_into()?)
+            }
+            ClientMessage::CreateCharacter => {
+                Message::CreateCharacter(CreateCharacterRaw::from_bytes(rest)?.1.try_into()?)
             }
         })
     }

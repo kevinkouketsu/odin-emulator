@@ -1,4 +1,5 @@
 pub mod authentication;
+pub mod create_character;
 pub mod numeric_token;
 
 #[cfg(test)]
@@ -9,14 +10,17 @@ pub mod tests {
         session::{SessionError, SessionTrait},
     };
     use deku::prelude::*;
-    use futures::FutureExt;
-    use odin_models::{account_charlist::AccountCharlist, uuid::Uuid};
+    use futures::{future::BoxFuture, FutureExt};
+    use odin_models::{
+        account_charlist::{AccountCharlist, CharacterInfo},
+        character::Class,
+        nickname::Nickname,
+        uuid::Uuid,
+    };
     use odin_networking::WritableResource;
     use odin_repositories::account_repository::{AccountRepository, AccountRepositoryError};
     use std::{
         collections::HashMap,
-        future::Future,
-        pin::Pin,
         sync::{Arc, RwLock},
     };
 
@@ -80,9 +84,7 @@ pub mod tests {
         fn fetch_account<'a>(
             &'a self,
             username: &'a str,
-        ) -> Pin<
-            Box<dyn Future<Output = Result<Option<AccountCharlist>, AccountRepositoryError>> + 'a>,
-        > {
+        ) -> BoxFuture<Result<Option<AccountCharlist>, AccountRepositoryError>> {
             async move {
                 let accounts = self.accounts.read().unwrap();
                 let Some(account) = accounts.get(username) else {
@@ -94,11 +96,29 @@ pub mod tests {
             .boxed()
         }
 
-        fn update_token<'a>(
-            &'a self,
+        fn fetch_charlist(
+            &self,
+            account_id: Uuid,
+        ) -> BoxFuture<Result<Vec<(usize, CharacterInfo)>, AccountRepositoryError>> {
+            async move {
+                let accounts = self.accounts.read().unwrap();
+                let Some((_, account)) = accounts
+                    .iter()
+                    .find(|account| account.1.account_charlist.identifier == account_id)
+                else {
+                    return Ok(vec![]);
+                };
+
+                Ok(account.account_charlist.charlist.clone())
+            }
+            .boxed()
+        }
+
+        fn update_token(
+            &self,
             id: Uuid,
             new_token: Option<String>,
-        ) -> Pin<Box<dyn Future<Output = Result<(), AccountRepositoryError>> + 'a>> {
+        ) -> BoxFuture<Result<(), AccountRepositoryError>> {
             async move {
                 let mut accounts = self.accounts.write().unwrap();
                 let Some((_, account)) = accounts
@@ -115,11 +135,7 @@ pub mod tests {
             .boxed()
         }
 
-        fn get_token<'a>(
-            &'a self,
-            id: Uuid,
-        ) -> Pin<Box<dyn Future<Output = Result<Option<String>, AccountRepositoryError>> + 'a>>
-        {
+        fn get_token(&self, id: Uuid) -> BoxFuture<Result<Option<String>, AccountRepositoryError>> {
             async move {
                 let accounts = self.accounts.read().unwrap();
 
@@ -130,6 +146,53 @@ pub mod tests {
                             .then(|| account.1.token.clone())
                     })
                     .flatten())
+            }
+            .boxed()
+        }
+
+        fn create_character<'a>(
+            &'a self,
+            account_id: Uuid,
+            slot: u32,
+            name: &'a Nickname,
+            class: Class,
+        ) -> BoxFuture<'a, Result<Uuid, AccountRepositoryError>> {
+            async move {
+                let mut accounts = self.accounts.write().unwrap();
+                let (_, account) = accounts
+                    .iter_mut()
+                    .find(|account| account.1.account_charlist.identifier == account_id)
+                    .ok_or_else(|| {
+                        AccountRepositoryError::FailToLoad("Could not find account".to_string())
+                    })?;
+
+                let uuid = Uuid::new_v4();
+                account.account_charlist.charlist[slot as usize].1 = CharacterInfo {
+                    identifier: uuid,
+                    class,
+                    name: name.to_string(),
+                    ..Default::default()
+                };
+
+                Ok(uuid)
+            }
+            .boxed()
+        }
+
+        fn name_exists<'a>(
+            &'a self,
+            name: &'a Nickname,
+        ) -> BoxFuture<'a, Result<bool, AccountRepositoryError>> {
+            async move {
+                let accounts = self.accounts.read().unwrap();
+                Ok(accounts.iter().any(|account| {
+                    account
+                        .1
+                        .account_charlist
+                        .charlist
+                        .iter()
+                        .any(|character| character.1.name.as_str() == name.as_str())
+                }))
             }
             .boxed()
         }

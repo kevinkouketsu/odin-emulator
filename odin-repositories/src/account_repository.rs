@@ -1,23 +1,43 @@
-use odin_models::{account_charlist::AccountCharlist, uuid::Uuid};
-use std::{future::Future, pin::Pin};
+use futures::future::BoxFuture;
+use odin_models::{
+    account_charlist::{AccountCharlist, CharacterInfo},
+    character::Class,
+    nickname::Nickname,
+    uuid::Uuid,
+};
 use thiserror::Error;
 
 pub trait AccountRepository: Clone + 'static {
     fn fetch_account<'a>(
         &'a self,
         username: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<AccountCharlist>, AccountRepositoryError>> + 'a>>;
+    ) -> BoxFuture<'a, Result<Option<AccountCharlist>, AccountRepositoryError>>;
 
-    fn update_token<'a>(
-        &'a self,
+    fn fetch_charlist(
+        &self,
+        account_id: Uuid,
+    ) -> BoxFuture<Result<Vec<(usize, CharacterInfo)>, AccountRepositoryError>>;
+
+    fn update_token(
+        &self,
         id: Uuid,
         new_token: Option<String>,
-    ) -> Pin<Box<dyn Future<Output = Result<(), AccountRepositoryError>> + 'a>>;
+    ) -> BoxFuture<Result<(), AccountRepositoryError>>;
 
-    fn get_token<'a>(
+    fn get_token(&self, id: Uuid) -> BoxFuture<Result<Option<String>, AccountRepositoryError>>;
+
+    fn create_character<'a>(
         &'a self,
-        id: Uuid,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<String>, AccountRepositoryError>> + 'a>>;
+        account_id: Uuid,
+        slot: u32,
+        name: &'a Nickname,
+        class: Class,
+    ) -> BoxFuture<'a, Result<Uuid, AccountRepositoryError>>;
+
+    fn name_exists<'a>(
+        &'a self,
+        name: &'a Nickname,
+    ) -> BoxFuture<'a, Result<bool, AccountRepositoryError>>;
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]

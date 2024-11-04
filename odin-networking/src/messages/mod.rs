@@ -17,6 +17,7 @@ pub enum MessageDirection {
 pub enum ClientMessage {
     Login,
     Token,
+    CreateCharacter,
 }
 impl TryFrom<u16> for ClientMessage {
     type Error = InvalidMessageType;
@@ -25,6 +26,7 @@ impl TryFrom<u16> for ClientMessage {
         Ok(match value {
             0x784 => ClientMessage::Login,
             0xFDE => ClientMessage::Token,
+            0x20F => ClientMessage::CreateCharacter,
             _ => return Err(InvalidMessageType(value)),
         })
     }
@@ -36,6 +38,8 @@ pub enum ServerMessage {
     FirstCharlist,
     CorrectNumericToken,
     IncorrectNumericToken,
+    UpdateCharlist,
+    CharacterNameAlreadyExists,
 }
 impl TryFrom<ServerMessage> for u16 {
     type Error = InvalidMessageType;
@@ -46,6 +50,8 @@ impl TryFrom<ServerMessage> for u16 {
             ServerMessage::FirstCharlist => 0x10A,
             ServerMessage::CorrectNumericToken => 0xFDE,
             ServerMessage::IncorrectNumericToken => 0xFDF,
+            ServerMessage::UpdateCharlist => 0x110,
+            ServerMessage::CharacterNameAlreadyExists => 0x11A,
         })
     }
 }

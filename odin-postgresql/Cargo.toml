@@ -11,3 +11,7 @@ odin-repositories = { path = "../odin-repositories" }
 entity = { path = "./entity" }
 sea-orm = { version = "^1.1.0", features = [ "sqlx-postgres", "runtime-tokio-native-tls", "macros", "with-chrono"] }
 thiserror = "1.0.65"
+sea-query = "0.32.0"
+
+[dev-dependencies]
+tokio = { version = "1.41.0", features = ["full"] }

@@ -47,7 +47,7 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(Character::AccountId).uuid().not_null())
+                    .col(ColumnDef::new(Character::AccountId).uuid())
                     .col(ColumnDef::new(Character::Slot).integer().not_null())
                     .col(
                         ColumnDef::new(Character::Name)

@@ -1,31 +1,34 @@
 use crate::{
     messages::{
         common::{ItemRaw, ScoreRaw},
+        server::MessageSignal,
         string::FixedSizeString,
         ServerMessage,
     },
-    WritableResource,
+    WritableResource, WritableResourceError,
 };
 use deku::prelude::*;
+use odin_macros::MessageSignalDerive;
 use odin_models::{
-    item::Item, position::Position, status::Score, storage::Storage, MAX_EQUIPS, MAX_STORAGE_ITEMS,
+    account_charlist::CharacterInfo, item::Item, position::Position, status::Score,
+    storage::Storage, MAX_EQUIPS, MAX_STORAGE_ITEMS,
 };
 use std::array;
 
 #[derive(Debug, Clone)]
-pub struct Charlist {
+pub struct FirstCharlist {
     pub token: Vec<u8>,
     pub character_info: Vec<(usize, CharlistInfo)>,
     pub storage: Storage,
     pub account_name: String,
 }
-impl WritableResource for Charlist {
+impl WritableResource for FirstCharlist {
     const IDENTIFIER: ServerMessage = ServerMessage::FirstCharlist;
-    type Output = CharlistRaw;
+    type Output = FirstCharlistRaw;
 
     fn write(self) -> Result<Self::Output, crate::WritableResourceError> {
-        let character_info = CharlistInfoRaw::from(&self);
-        Ok(CharlistRaw {
+        let character_info = CharlistInfoRaw::from(self.character_info.as_slice());
+        Ok(FirstCharlistRaw {
             token: array::from_fn(|i| {
                 self.token
                     .get(i)
@@ -48,6 +51,21 @@ impl WritableResource for Charlist {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct UpdateCharlist {
+    pub character_info: Vec<(usize, CharlistInfo)>,
+}
+impl WritableResource for UpdateCharlist {
+    const IDENTIFIER: ServerMessage = ServerMessage::UpdateCharlist;
+    type Output = UpdateCharlistRaw;
+
+    fn write(self) -> Result<Self::Output, crate::WritableResourceError> {
+        Ok(UpdateCharlistRaw {
+            data: CharlistInfoRaw::from(self.character_info.as_slice()),
+        })
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct CharlistInfo {
     pub position: Position,
@@ -58,9 +76,38 @@ pub struct CharlistInfo {
     pub coin: u32,
     pub experience: i64,
 }
+impl From<CharacterInfo> for CharlistInfo {
+    fn from(character: CharacterInfo) -> Self {
+        CharlistInfo {
+            position: character.position,
+            name: character.name.clone(),
+            status: character.status,
+            equips: character.equipments.clone(),
+            guild: character.guild,
+            coin: character.coin,
+            experience: character.experience,
+        }
+    }
+}
+impl From<odin_models::account_charlist::AccountCharlist> for FirstCharlist {
+    fn from(value: odin_models::account_charlist::AccountCharlist) -> Self {
+        let characters = value
+            .charlist
+            .into_iter()
+            .map(|(slot, character)| (slot, character.into()))
+            .collect();
+
+        FirstCharlist {
+            token: vec![0; 16],
+            character_info: characters,
+            storage: Storage::default(),
+            account_name: value.username.clone(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, DekuRead, DekuWrite)]
-pub struct CharlistRaw {
+pub struct FirstCharlistRaw {
     pub token: [u8; 16],
     pub data: CharlistInfoRaw,
     pub storage_items: [ItemRaw; MAX_STORAGE_ITEMS],
@@ -68,6 +115,11 @@ pub struct CharlistRaw {
     pub account_name: FixedSizeString<16>,
     pub ssn1: u32,
     pub ssn2: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, DekuRead, DekuWrite)]
+pub struct UpdateCharlistRaw {
+    pub data: CharlistInfoRaw,
 }
 
 #[derive(Debug, Clone, PartialEq, DekuRead, DekuWrite)]
@@ -81,16 +133,16 @@ pub struct CharlistInfoRaw {
     pub coin: [u32; 4],
     pub experience: [i64; 4],
 }
-impl From<&Charlist> for CharlistInfoRaw {
-    fn from(value: &Charlist) -> Self {
+impl From<&[(usize, CharlistInfo)]> for CharlistInfoRaw {
+    fn from(value: &[(usize, CharlistInfo)]) -> Self {
         CharlistInfoRaw {
-            home_town_x: map_character_info(&value.character_info, |char| char.position.x),
-            home_town_y: map_character_info(&value.character_info, |char| char.position.y),
-            name: map_character_info(&value.character_info, |char| {
+            home_town_x: map_character_info(value, |char| char.position.x),
+            home_town_y: map_character_info(value, |char| char.position.y),
+            name: map_character_info(value, |char| {
                 char.name.as_str().try_into().unwrap_or_default()
             }),
-            score: map_character_info(&value.character_info, |char| char.status.into()),
-            equipments: map_character_info(&value.character_info, |char| {
+            score: map_character_info(value, |char| char.status.into()),
+            equipments: map_character_info(value, |char| {
                 array::from_fn(|i| {
                     char.equips
                         .iter()
@@ -99,11 +151,9 @@ impl From<&Charlist> for CharlistInfoRaw {
                         .into()
                 })
             }),
-            guilds: map_character_info(&value.character_info, |char| {
-                char.guild.unwrap_or_default()
-            }),
-            coin: map_character_info(&value.character_info, |char| char.coin),
-            experience: map_character_info(&value.character_info, |char| char.experience),
+            guilds: map_character_info(value, |char| char.guild.unwrap_or_default()),
+            coin: map_character_info(value, |char| char.coin),
+            experience: map_character_info(value, |char| char.experience),
         }
     }
 }
@@ -125,3 +175,7 @@ where
             .unwrap_or_default()
     })
 }
+
+#[derive(Default, MessageSignalDerive)]
+#[identifier = "ServerMessage::CharacterNameAlreadyExists"]
+pub struct NameAlreadyExistsError;

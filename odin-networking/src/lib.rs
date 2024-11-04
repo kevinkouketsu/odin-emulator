@@ -27,4 +27,7 @@ pub enum WritableResourceError {
 
     #[error(transparent)]
     Deku(#[from] DekuError),
+
+    #[error("Generic error: {0}")]
+    Generic(String),
 }

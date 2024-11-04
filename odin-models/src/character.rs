@@ -1,4 +1,5 @@
 use crate::{item::Item, position::Position, status::Score};
+use thiserror::Error;
 
 #[derive(Debug, Default, Clone)]
 pub struct Character {
@@ -46,7 +47,7 @@ impl GuildLevel {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 pub enum Class {
     // check if this makes sense
     #[default]
@@ -55,15 +56,30 @@ pub enum Class {
     BeastMaster,
     Huntress,
 }
-impl Class {
-    pub fn new<I: Into<i32>>(class: I) -> Option<Self> {
-        let class = class.into();
-        Some(match class {
+impl From<Class> for i32 {
+    fn from(value: Class) -> Self {
+        match value {
+            Class::TransKnight => 0,
+            Class::Foema => 1,
+            Class::BeastMaster => 2,
+            Class::Huntress => 3,
+        }
+    }
+}
+impl TryFrom<i32> for Class {
+    type Error = FailToParseClass;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        Ok(match value {
             0 => Class::TransKnight,
             1 => Class::Foema,
             2 => Class::BeastMaster,
             3 => Class::Huntress,
-            _ => return None,
+            _ => return Err(FailToParseClass(value)),
         })
     }
 }
+
+#[derive(Debug, Error)]
+#[error("Fail to parse to class: {0}")]
+pub struct FailToParseClass(i32);
