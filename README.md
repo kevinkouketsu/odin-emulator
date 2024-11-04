@@ -19,8 +19,8 @@ Configurations are still under development, so options such as client version (c
 - [x] Receive and parse messages
 - [x] Login to the character select screen
 - [x] Numeric token
-- [ ] Validate and send account data
-- [ ] Create character
+    - [ ] Disconnect user when it sends more than 3 incorrect tokens
+- [x] Create character
 - [ ] Delete character
 - [ ] Enter world
 - [ ] ...
