@@ -64,16 +64,16 @@ const KEYTABLE: [u8; 512] = [
 #[command(author, version, about, long_about = None)]
 struct Cli {
     addr: SocketAddr,
-
-    database_url: String,
 }
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
     env_logger::init();
+    dotenvy::dotenv().unwrap();
 
-    let gameserver = GameServer::new(cli.addr, cli.database_url).unwrap();
+    let database_url = dotenvy::var("DATABASE_URL").expect("Database URL is mandatory");
+    let gameserver = GameServer::new(cli.addr, database_url).unwrap();
     gameserver.run().await;
 }
 
