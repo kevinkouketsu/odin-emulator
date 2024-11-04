@@ -264,13 +264,13 @@ impl MigrationTrait for Migration {
 
         // Default starting items, the user may define afterward
         manager.get_connection().execute_unprepared("
-            INSERT INTO players (slot, name, class, strength, intelligence, dexterity, constitution, current_hp, current_mp, last_pos)
+            INSERT INTO character (slot, name, class, strength, intelligence, dexterity, constitution, current_hp, current_mp, last_pos)
             VALUES (0, 'TransKnight', 0, 8, 9, 13, 6, 75, 45, '(2100, 2100)');
-            INSERT INTO players (slot, name, class, strength, intelligence, dexterity, constitution, current_hp, current_mp, last_pos)
+            INSERT INTO character (slot, name, class, strength, intelligence, dexterity, constitution, current_hp, current_mp, last_pos)
             VALUES (0, 'Foema', 1, 5, 8, 5, 5, 60, 65, '(2100, 2100)');
-            INSERT INTO players (slot, name, class, strength, intelligence, dexterity, constitution, current_hp, current_mp, last_pos)
+            INSERT INTO character (slot, name, class, strength, intelligence, dexterity, constitution, current_hp, current_mp, last_pos)
             VALUES (0, 'BeastMaster', 2, 6, 6, 9, 5, 70, 55, '(2100, 2100)');
-            INSERT INTO players (slot, name, class, strength, intelligence, dexterity, constitution, current_hp, current_mp, last_pos)
+            INSERT INTO character (slot, name, class, strength, intelligence, dexterity, constitution, current_hp, current_mp, last_pos)
             VALUES (0, 'Huntress', 3, 8, 9, 13, 6, 75, 60, '(2100, 2100)');
 
             INSERT INTO start_item (type, class, slot, item_id, ef1, efv1, ef2, efv2) VALUES ('equip', 0, 0, 1, 43, 0, 1, 1);
