@@ -1,0 +1,25 @@
+[package]
+name = "odin-database"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+postgresql = ["sea-orm/sqlx-postgres", "migration/postgresql"]
+sqlite = ["sea-orm/sqlx-sqlite", "migration/sqlite"]
+
+[dependencies]
+chrono = "0.4.38"
+futures = "0.3.28"
+odin-models = { path = "../odin-models" }
+odin-repositories = { path = "../odin-repositories" }
+entity = { path = "./entity" }
+sea-orm = { version = "^1.1.0", features = ["runtime-tokio-native-tls", "macros", "with-chrono", "with-uuid"] }
+thiserror = "1.0.65"
+sea-query = "0.32.0"
+migration = { path = "./migration" }
+log = "0.4.22"
+tracing = "0.1.40"
+
+[dev-dependencies]
+tokio = { version = "1.41.0", features = ["full"] }

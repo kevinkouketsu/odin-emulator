@@ -1,3 +1,5 @@
+use crate::ActiveValueExt;
+use async_trait::async_trait;
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
@@ -38,13 +40,22 @@ impl Related<super::account::Entity> for Entity {
     }
 }
 
-impl ActiveModelBehavior for ActiveModel {}
+#[async_trait]
+impl ActiveModelBehavior for ActiveModel {
+    async fn before_save<C>(mut self, _db: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        self.id.generate_new_uuid(insert);
+        Ok(self)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "ban_type")]
 pub enum BanType {
-    #[sea_orm(string_value = "0")]
+    #[sea_orm(string_value = "analysis")]
     Analysis,
-    #[sea_orm(string_value = "1")]
+    #[sea_orm(string_value = "blocked")]
     Blocked,
 }

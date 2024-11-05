@@ -1,4 +1,7 @@
+use async_trait::async_trait;
 use sea_orm::entity::prelude::*;
+
+use crate::ActiveValueExt;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "account")]
@@ -10,7 +13,7 @@ pub struct Model {
     pub password: String,
     pub cash: i32,
     pub access: i32,
-    pub storage_coin: Option<i64>,
+    pub storage_coin: i64,
     pub token: Option<String>,
 }
 
@@ -33,4 +36,14 @@ impl Related<super::account_ban::Entity> for Entity {
         Relation::AccountBan.def()
     }
 }
-impl ActiveModelBehavior for ActiveModel {}
+
+#[async_trait]
+impl ActiveModelBehavior for ActiveModel {
+    async fn before_save<C>(mut self, _db: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        self.id.generate_new_uuid(insert);
+        Ok(self)
+    }
+}

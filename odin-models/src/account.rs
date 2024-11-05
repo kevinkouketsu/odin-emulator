@@ -17,6 +17,14 @@ pub enum AccessLevel {
     Administrator,
     GameMaster(u32),
 }
+impl AccessLevel {
+    pub fn get_level(&self) -> u32 {
+        match self {
+            AccessLevel::Administrator => 100,
+            AccessLevel::GameMaster(level) => *level,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ban {

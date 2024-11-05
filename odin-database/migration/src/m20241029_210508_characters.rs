@@ -1,3 +1,5 @@
+use entity::character::Class;
+use sea_orm::ActiveEnum;
 use sea_orm_migration::prelude::*;
 
 use crate::m20241026_013531_create_accounts_table::Account;
@@ -43,7 +45,6 @@ impl MigrationTrait for Migration {
                     .col(
                         ColumnDef::new(Character::Id)
                             .uuid()
-                            .extra("DEFAULT gen_random_uuid()")
                             .not_null()
                             .primary_key(),
                     )
@@ -64,9 +65,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Character::GuildId).small_integer().null())
                     .col(
                         ColumnDef::new(Character::Class)
-                            .small_integer()
-                            .not_null()
-                            .default(0),
+                            .custom(Class::name())
+                            .not_null(),
                     )
                     .col(
                         ColumnDef::new(Character::AffectInfo)

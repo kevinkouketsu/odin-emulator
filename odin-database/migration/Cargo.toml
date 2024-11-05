@@ -8,10 +8,15 @@ publish = false
 name = "migration"
 path = "src/lib.rs"
 
+[features]
+default = []
+postgresql = ["sea-orm-migration/sqlx-postgres"]
+sqlite = ["sea-orm-migration/sqlx-sqlite"]
+
 [dependencies]
 async-std = { version = "1", features = ["attributes", "tokio1"] }
 entity = { path = "../entity" }
 
 [dependencies.sea-orm-migration]
 version = "1.1.0"
-features = ["sqlx-postgres", "runtime-tokio-native-tls"]
+features = ["runtime-tokio-native-tls"]

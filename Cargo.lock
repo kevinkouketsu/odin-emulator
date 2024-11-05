@@ -748,7 +748,9 @@ dependencies = [
 name = "entity"
 version = "0.1.0"
 dependencies = [
+ "odin-models",
  "sea-orm",
+ "uuid",
 ]
 
 [[package]]
@@ -1520,6 +1522,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "odin-database"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "entity",
+ "futures",
+ "log",
+ "migration",
+ "odin-models",
+ "odin-repositories",
+ "sea-orm",
+ "sea-query",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "odin-emulator"
 version = "0.1.0"
 dependencies = [
@@ -1531,9 +1551,9 @@ dependencies = [
  "futures",
  "log",
  "message-io",
+ "odin-database",
  "odin-models",
  "odin-networking",
- "odin-postgresql",
  "odin-repositories",
  "thiserror",
  "tokio",
@@ -1569,21 +1589,6 @@ dependencies = [
  "odin-models",
  "rand",
  "thiserror",
-]
-
-[[package]]
-name = "odin-postgresql"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "entity",
- "futures",
- "odin-models",
- "odin-repositories",
- "sea-orm",
- "sea-query",
- "thiserror",
- "tokio",
 ]
 
 [[package]]

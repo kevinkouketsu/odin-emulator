@@ -106,41 +106,39 @@ pub enum NumericTokenError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::handlers::tests::{MockAccountCharlist, MockAccountRepository, MockSession};
+    use crate::handlers::tests::{MockSession, TestAccountRepository};
     use odin_models::account_charlist::AccountCharlist;
 
-    fn account_with_token(token: Option<&str>) -> MockAccountCharlist {
-        MockAccountCharlist {
-            account_charlist: AccountCharlist {
-                identifier: Uuid::new_v4(),
-                username: "admin".to_string(),
-                password: "admin".to_string(),
-                ..Default::default()
-            },
-            token: token.map(Into::into),
+    fn new_account() -> AccountCharlist {
+        AccountCharlist {
+            identifier: Uuid::new_v4(),
+            username: "admin".to_string(),
+            password: "admin".to_string(),
+            ..Default::default()
         }
     }
 
     #[tokio::test]
     async fn it_sets_the_token_on_first_login() {
-        let mut account_repository = MockAccountRepository::default();
-        account_repository.add_account(account_with_token(None));
+        let repository = TestAccountRepository::new().await;
 
-        let account = account_repository.get_account("admin").unwrap();
-        assert!(NumericToken {
+        let account = new_account();
+        repository.add_account(account.clone(), None).await;
+
+        NumericToken {
             token: "1208".to_string(),
             changing: false,
         }
-        .handle_impl(
-            account.account_charlist.identifier,
-            false,
-            account_repository.clone()
-        )
+        .handle_impl(account.identifier, false, repository.account_repository())
         .await
-        .is_ok());
+        .unwrap();
 
         assert_eq!(
-            account_repository.get_account("admin").unwrap().token,
+            repository
+                .account_repository()
+                .get_token(account.identifier)
+                .await
+                .unwrap(),
             Some("1208".to_string())
         );
     }
@@ -150,20 +148,18 @@ mod tests {
 
         #[tokio::test]
         async fn when_the_user_tries_to_login_with_incorrect_token_then_it_returns_an_error() {
-            let mut account_repository = MockAccountRepository::default();
-            account_repository.add_account(account_with_token(Some("1208")));
+            let repository = TestAccountRepository::new().await;
+            let account = new_account();
+            repository
+                .add_account(account.clone(), Some("1208".to_string()))
+                .await;
 
-            let account = account_repository.get_account("admin").unwrap();
             assert!(matches!(
                 NumericToken {
                     token: "1111".to_string(),
                     changing: false,
                 }
-                .handle_impl(
-                    account.account_charlist.identifier,
-                    false,
-                    account_repository.clone()
-                )
+                .handle_impl(account.identifier, false, repository.account_repository(),)
                 .await,
                 Err(NumericTokenError::IncorrectToken(_))
             ));
@@ -171,18 +167,21 @@ mod tests {
 
         #[tokio::test]
         async fn then_it_must_not_update_the_token() {
-            let mut account_repository = MockAccountRepository::default();
-            account_repository.add_account(account_with_token(Some("1208")));
+            let repository = TestAccountRepository::new().await;
 
-            let account = account_repository.get_account("admin").unwrap();
+            let account = new_account();
+            repository
+                .add_account(account.clone(), Some("1208".to_string()))
+                .await;
+
             assert!(NumericToken {
                 token: "1208".to_string(),
                 changing: false,
             }
             .handle_impl(
-                account.account_charlist.identifier,
+                account.identifier,
                 false,
-                account_repository.clone()
+                repository.account_repository().clone()
             )
             .await
             .is_ok());
@@ -193,10 +192,12 @@ mod tests {
 
             #[tokio::test]
             async fn without_entering_the_correct_token_beforehand() {
-                let mut account_repository = MockAccountRepository::default();
-                account_repository.add_account(account_with_token(Some("1208")));
+                let repository = TestAccountRepository::new().await;
+                let account = new_account();
+                repository
+                    .add_account(account.clone(), Some("1208".to_string()))
+                    .await;
 
-                let account = account_repository.get_account("admin").unwrap();
                 assert!(matches!(
                     NumericToken {
                         token: "1111".to_string(),
@@ -204,9 +205,9 @@ mod tests {
                     }
                     .handle(
                         &MockSession::default(),
-                        account.account_charlist.identifier,
+                        account.identifier,
                         false,
-                        account_repository.clone()
+                        repository.account_repository()
                     )
                     .await,
                     Err(NumericTokenError::IncorrectState)
@@ -215,24 +216,26 @@ mod tests {
 
             #[tokio::test]
             async fn with_previously_correct_token() {
-                let mut account_repository = MockAccountRepository::default();
-                account_repository.add_account(account_with_token(Some("1208")));
+                let repository = TestAccountRepository::new().await;
+                let account = new_account();
+                repository
+                    .add_account(account.clone(), Some("1208".to_string()))
+                    .await;
 
-                let account = account_repository.get_account("admin").unwrap();
-                assert!(NumericToken {
+                NumericToken {
                     token: "1111".to_string(),
                     changing: true,
                 }
-                .handle_impl(
-                    account.account_charlist.identifier,
-                    true,
-                    account_repository.clone()
-                )
+                .handle_impl(account.identifier, true, repository.account_repository())
                 .await
-                .is_ok());
+                .unwrap();
 
                 assert_eq!(
-                    account_repository.get_account("admin").unwrap().token,
+                    repository
+                        .account_repository()
+                        .get_token(account.identifier)
+                        .await
+                        .unwrap(),
                     Some("1111".to_string())
                 )
             }

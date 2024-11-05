@@ -16,8 +16,8 @@ use message_io::{
     network::Transport,
     node::{self, NodeHandler, NodeListener, StoredNetEvent, StoredNodeEvent},
 };
+use odin_database::DatabaseService;
 use odin_networking::{enc_session::EncDecSession, messages::header::Header};
-use odin_postgresql::PostgreSqlService;
 use std::{
     io,
     net::{SocketAddr, ToSocketAddrs},
@@ -95,7 +95,7 @@ impl GameServer {
     }
 
     pub async fn run(self) {
-        let connection = PostgreSqlService::new(&self.database_url).await.unwrap();
+        let connection = DatabaseService::new(&self.database_url).await.unwrap();
         let account_repository = connection.account_repository();
         let mut context = GameServerContext::new(
             self.node_handler.clone(),

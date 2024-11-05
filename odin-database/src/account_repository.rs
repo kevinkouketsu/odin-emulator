@@ -4,6 +4,7 @@ use entity::{
     account_ban::Entity as AccountBanEntity,
     character::{Entity as CharacterEntity, Model as Character},
     item::{Entity as ItemEntity, ItemCategory},
+    start_item::Entity as StartItemEntity,
 };
 use futures::{future::BoxFuture, FutureExt};
 use odin_models::{
@@ -17,16 +18,16 @@ use odin_models::{
 };
 use odin_repositories::account_repository::{AccountRepository, AccountRepositoryError};
 use sea_orm::{
-    prelude::*, ActiveValue, DatabaseConnection, QueryOrder, QuerySelect, SelectColumns, Set,
+    prelude::*, ActiveValue, DatabaseConnection, FromQueryResult, QueryOrder, QuerySelect,
+    SelectColumns, Set, TransactionTrait,
 };
-use sea_query::{Func, Query};
-use std::str::FromStr;
+use sea_query::Func;
 
 #[derive(Clone)]
-pub struct PostgreSqlAccountRepository {
+pub struct DatabaseAccountRepository {
     connection: DatabaseConnection,
 }
-impl PostgreSqlAccountRepository {
+impl DatabaseAccountRepository {
     pub fn new(connection: DatabaseConnection) -> Self {
         Self { connection }
     }
@@ -40,7 +41,7 @@ impl PostgreSqlAccountRepository {
             .filter(entity::item::Column::CharacterId.eq(character.id))
             .all(&self.connection)
             .await
-            .map_err(|e| AccountRepositoryError::FailToLoad(e.to_string()))?
+            .map_err(map_to_fail_to_load)?
             .into_iter()
             .map(|item| {
                 (
@@ -89,7 +90,7 @@ impl PostgreSqlAccountRepository {
         })
     }
 }
-impl AccountRepository for PostgreSqlAccountRepository {
+impl AccountRepository for DatabaseAccountRepository {
     fn fetch_account<'a>(
         &'a self,
         username: &'a str,
@@ -102,7 +103,7 @@ impl AccountRepository for PostgreSqlAccountRepository {
                 )
                 .one(&self.connection)
                 .await
-                .map_err(|e| AccountRepositoryError::FailToLoad(e.to_string()))?
+                .map_err(map_to_fail_to_load)?
             else {
                 return Ok(None);
             };
@@ -113,7 +114,7 @@ impl AccountRepository for PostgreSqlAccountRepository {
                 .order_by_desc(entity::account_ban::Column::ExpiresAt)
                 .one(&self.connection)
                 .await
-                .map_err(|e| AccountRepositoryError::FailToLoad(e.to_string()))?;
+                .map_err(map_to_fail_to_load)?;
 
             let access = match account.access {
                 1..=99 => Some(AccessLevel::GameMaster(account.access as u32)),
@@ -151,7 +152,7 @@ impl AccountRepository for PostgreSqlAccountRepository {
                 .order_by_asc(entity::character::Column::Slot)
                 .all(&self.connection)
                 .await
-                .map_err(|e| AccountRepositoryError::FailToLoad(e.to_string()))?;
+                .map_err(map_to_fail_to_load)?;
 
             let mut charlist = vec![];
             for character in characters {
@@ -173,15 +174,15 @@ impl AccountRepository for PostgreSqlAccountRepository {
     ) -> BoxFuture<Result<(), AccountRepositoryError>> {
         async move {
             let account = entity::account::ActiveModel {
-                id: ActiveValue::Unchanged(id),
+                id: ActiveValue::Set(id),
                 token: Set(new_token.map(Into::into)),
                 ..Default::default()
             };
 
-            AccountEntity::update(account)
-                .exec(&self.connection)
+            account
+                .update(&self.connection)
                 .await
-                .map_err(|e| AccountRepositoryError::FailToLoad(e.to_string()))?;
+                .map_err(map_to_fail_to_load)?;
 
             Ok(())
         }
@@ -195,7 +196,7 @@ impl AccountRepository for PostgreSqlAccountRepository {
                 .select_column(entity::account::Column::Token)
                 .one(&self.connection)
                 .await
-                .map_err(|e| AccountRepositoryError::FailToLoad(e.to_string()))?
+                .map_err(map_to_fail_to_load)?
                 .and_then(|x| x.token))
         }
         .boxed()
@@ -209,30 +210,89 @@ impl AccountRepository for PostgreSqlAccountRepository {
         class: Class,
     ) -> BoxFuture<'a, Result<Uuid, AccountRepositoryError>> {
         async move {
-            let query = Query::select()
-                .expr(
-                    Func::cust(CreateCharacter)
-                        .arg(account_id.to_string())
-                        .arg(name.to_string())
-                        .arg(slot as i32)
-                        .arg(i32::from(class)),
+            let Some(base_character) = CharacterEntity::find()
+                .filter(entity::character::Column::AccountId.is_null())
+                .filter(
+                    entity::character::Column::Class.eq::<entity::character::Class>(class.into()),
                 )
-                .to_owned();
-
-            let r = self
-                .connection
-                .query_one(self.connection.get_database_backend().build(&query))
+                .select_only()
+                .into_partial_model::<BaseCharacterPartialModel>()
+                .one(&self.connection)
                 .await
-                .map_err(|e| AccountRepositoryError::FailToLoad(e.to_string()))?
-                .ok_or_else(|| {
-                    AccountRepositoryError::Generic("Fail to create character".to_string())
-                })?;
+                .map_err(map_to_fail_to_load)?
+            else {
+                tracing::error!(?class, "Could not fetch the base character",);
 
-            let r: String = r
-                .try_get_by_index(0)
-                .map_err(|e| AccountRepositoryError::Generic(e.to_string()))?;
+                return Err(AccountRepositoryError::Generic(
+                    "Could not find to fetch base character".to_string(),
+                ));
+            };
 
-            Ok(Uuid::from_str(&r).unwrap())
+            let transaction = self.connection.begin().await.map_err(map_to_generic)?;
+
+            let uuid = Uuid::new_v4();
+            CharacterEntity::insert(entity::character::ActiveModel {
+                id: Set(uuid),
+                account_id: Set(Some(account_id)),
+                slot: Set(slot as i32),
+                name: Set(name.to_string()),
+                class: Set(class.into()),
+                coin: Set(base_character.coin),
+                experience: Set(base_character.experience),
+                last_pos: Set(base_character.last_pos),
+                level: Set(base_character.level),
+                strength: Set(base_character.strength),
+                intelligence: Set(base_character.intelligence),
+                dexterity: Set(base_character.dexterity),
+                constitution: Set(base_character.constitution),
+                special0: Set(base_character.special0),
+                special1: Set(base_character.special1),
+                special2: Set(base_character.special2),
+                special3: Set(base_character.special3),
+                current_hp: Set(base_character.current_hp),
+                current_mp: Set(base_character.current_mp),
+                ..Default::default()
+            })
+            .exec_without_returning(&transaction)
+            .await
+            .map_err(map_to_fail_to_load)?;
+
+            let start_items = StartItemEntity::find()
+                .filter(
+                    entity::start_item::Column::Class.eq::<entity::character::Class>(class.into()),
+                )
+                .all(&transaction)
+                .await
+                .map_err(map_to_fail_to_load)?;
+
+            entity::item::Entity::insert_many(
+                start_items
+                    .into_iter()
+                    .map(|item| entity::item::ActiveModel {
+                        id: Set(Uuid::new_v4()),
+                        r#type: Set(item.r#type),
+                        item_id: Set(item.item_id),
+                        ef1: Set(item.ef1),
+                        efv1: Set(item.efv1),
+                        ef2: Set(item.ef2),
+                        efv2: Set(item.efv2),
+                        ef3: Set(item.ef3),
+                        efv3: Set(item.efv3),
+                        ef4: Set(item.ef4),
+                        efv4: Set(item.efv4),
+                        ef5: Set(item.ef5),
+                        efv5: Set(item.efv5),
+                        slot: Set(item.slot),
+                        character_id: Set(uuid),
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .exec_without_returning(&transaction)
+            .await
+            .map_err(map_to_generic)?;
+
+            transaction.commit().await.map_err(map_to_generic)?;
+            Ok(uuid)
         }
         .boxed()
     }
@@ -242,22 +302,46 @@ impl AccountRepository for PostgreSqlAccountRepository {
         name: &'a Nickname,
     ) -> BoxFuture<'a, Result<bool, AccountRepositoryError>> {
         async move {
-            Ok(CharacterEntity::find()
+            let total = CharacterEntity::find()
                 .select_only()
-                .column_as(entity::character::Column::Id.count(), "count")
+                .column(entity::character::Column::Id)
                 .filter(
                     Expr::expr(Func::lower(Expr::col(entity::character::Column::Name)))
                         .eq(Expr::expr(Func::lower(Expr::value(name.to_string())))),
                 )
                 .count(&self.connection)
                 .await
-                .map_err(|e| AccountRepositoryError::FailToLoad(e.to_string()))?
-                > 0)
+                .map_err(map_to_generic)?;
+
+            Ok(total > 0)
         }
         .boxed()
     }
 }
 
-#[derive(Iden)]
-#[iden = "CreateCharacter"]
-struct CreateCharacter;
+#[derive(DerivePartialModel, FromQueryResult)]
+#[sea_orm(entity = "CharacterEntity")]
+struct BaseCharacterPartialModel {
+    coin: i32,
+    experience: i64,
+    last_pos: String,
+    level: i32,
+    strength: i32,
+    intelligence: i32,
+    dexterity: i32,
+    constitution: i32,
+    special0: i32,
+    special1: i32,
+    special2: i32,
+    special3: i32,
+    current_hp: i32,
+    current_mp: i32,
+}
+
+fn map_to_generic(err: DbErr) -> AccountRepositoryError {
+    AccountRepositoryError::Generic(err.to_string())
+}
+
+fn map_to_fail_to_load(err: DbErr) -> AccountRepositoryError {
+    AccountRepositoryError::Generic(err.to_string())
+}

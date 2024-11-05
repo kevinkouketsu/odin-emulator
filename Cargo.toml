@@ -6,8 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["postgresql"]
-postgresql = ["dotenvy", "odin-postgresql"]
+default = []
+postgresql = ["dotenvy", "odin-database", "odin-database/postgresql"]
+sqlite = ["dotenvy", "odin-database", "odin-database/sqlite" ]
 
 [dependencies]
 clap = { version = "4.4.8", features = ["derive"] }
@@ -15,23 +16,26 @@ deku = "0.18.0"
 env_logger = "0.11.5"
 futures = "0.3.29"
 log = "0.4.20"
-message-io = { version = "0.18.2", default-features = false, features = ["tcp", "udp"]  }
+message-io = { version = "0.18.2", default-features = false, features = ["tcp"]  }
 odin-models = { path = "./odin-models" }
 odin-networking = { path = "./odin-networking" }
-odin-postgresql = { path = "./odin-postgresql", optional = true }
+odin-database = { path = "./odin-database", optional = true }
 odin-repositories = { path = "./odin-repositories" }
 dotenvy = { version = "0.15", optional = true }
 thiserror = "1.0.50"
 tokio = { version = "1.41.0", features = ["macros", "rt", "rt-multi-thread"] }
 chrono = "0.4.38"
 
+[dev-dependencies]
+odin-database = { path = "./odin-database", features = ["sqlite"] }
+
 [workspace]
 members = [
     "odin-models",
     "odin-macros",
     "odin-networking",
-    "odin-postgresql",
-    "odin-postgresql/entity",
-    "odin-postgresql/migration",
+    "odin-database",
+    "odin-database/entity",
+    "odin-database/migration",
     "odin-repositories"
 ]

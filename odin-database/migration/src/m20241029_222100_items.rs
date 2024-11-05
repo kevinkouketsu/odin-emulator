@@ -1,6 +1,6 @@
 use entity::item::ItemCategory;
 use extension::postgres::Type;
-use sea_orm::{ActiveEnum, DbBackend, Schema};
+use sea_orm::ActiveEnum;
 use sea_orm_migration::prelude::*;
 
 use crate::m20241029_210508_characters::Character;
@@ -11,23 +11,20 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        let schema = Schema::new(DbBackend::Postgres);
-        manager
-            .create_type(schema.create_enum_from_active_enum::<ItemCategory>())
-            .await?;
+        #[cfg(feature = "postgresql")]
+        {
+            let schema = sea_orm::Schema::new(sea_orm::DbBackend::Postgres);
+            manager
+                .create_type(schema.create_enum_from_active_enum::<ItemCategory>())
+                .await?;
+        }
 
         manager
             .create_table(
                 Table::create()
                     .if_not_exists()
                     .table(Item::Table)
-                    .col(
-                        ColumnDef::new(Item::Id)
-                            .uuid()
-                            .extra("DEFAULT gen_random_uuid()")
-                            .not_null()
-                            .primary_key(),
-                    )
+                    .col(ColumnDef::new(Item::Id).uuid().not_null().primary_key())
                     .col(
                         ColumnDef::new(Item::Type)
                             .custom(ItemCategory::name())

@@ -4,6 +4,7 @@ use odin_models::{
     character::Class,
     nickname::{InvalidNicknameError, Nickname},
     uuid::Uuid,
+    MAX_CHARACTERS,
 };
 use odin_networking::{
     messages::{
@@ -63,6 +64,10 @@ impl CreateCharacter {
         account_id: Uuid,
         account_repository: A,
     ) -> Result<Vec<(usize, CharacterInfo)>, CreateCharacterError> {
+        if self.slot as usize >= MAX_CHARACTERS {
+            return Err(CreateCharacterError::InvalidSlot(self.slot as usize));
+        }
+
         let nickname: Nickname = self.name.clone().try_into()?;
         if account_repository.name_exists(&nickname).await? {
             return Err(CreateCharacterError::NameAlreadyExists);
@@ -101,6 +106,9 @@ pub enum CreateCharacterError {
 
     #[error("Name already exists")]
     NameAlreadyExists,
+
+    #[error("Slot {0} is not within valid range")]
+    InvalidSlot(usize),
 
     #[error(transparent)]
     SessionError(#[from] SessionError),

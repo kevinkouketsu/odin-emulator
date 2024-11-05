@@ -1,7 +1,14 @@
+use std::fmt::Display;
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
     pub x: u16,
     pub y: u16,
+}
+impl Display for Position {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{},{}", self.x, self.y)
+    }
 }
 impl From<(u16, u16)> for Position {
     fn from(value: (u16, u16)) -> Self {

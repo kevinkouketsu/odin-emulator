@@ -42,7 +42,7 @@ pub trait AccountRepository: Clone + 'static {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum AccountRepositoryError {
-    #[error("Fail to load account: {0}")]
+    #[error("Fail to query: {0}")]
     FailToLoad(String),
 
     #[error("{0}")]

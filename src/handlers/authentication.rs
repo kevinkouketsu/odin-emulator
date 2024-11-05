@@ -195,9 +195,7 @@ mod tests {
     use super::*;
     use crate::{
         configuration::ServerState,
-        handlers::tests::{
-            MockAccountCharlist, MockAccountRepository, MockConfiguration, MockSession,
-        },
+        handlers::tests::{MockConfiguration, MockSession, TestAccountRepository},
     };
     use chrono::{Days, Local};
     use odin_models::{
@@ -223,7 +221,7 @@ mod tests {
                 .handle_impl(
                     &MockSession::default(),
                     &MockConfiguration(CliVer::new(2), ServerState::Open),
-                    MockAccountRepository::default()
+                    TestAccountRepository::new().await.account_repository()
                 )
                 .await,
             Err(AuthenticationError::InvalidCliVer(_))
@@ -235,107 +233,142 @@ mod tests {
         let message = get_login_message();
 
         // No accounts are registered
-        let mut account_repository = MockAccountRepository::default();
+        let account_repository = TestAccountRepository::new().await;
         assert!(matches!(
             message
                 .handle_impl(
                     &MockSession::default(),
                     &MockConfiguration(CliVer::new(1), ServerState::Open),
-                    account_repository.clone()
+                    account_repository.account_repository()
                 )
                 .await
                 .unwrap_err(),
             AuthenticationError::AccountNotFound
         ));
 
-        account_repository.add_account(MockAccountCharlist {
-            account_charlist: AccountCharlist {
-                identifier: Uuid::new_v4(),
-                username: "admin".to_string(),
-                password: "admin2".to_string(),
-                ban: None,
-                ..Default::default()
-            },
-            ..Default::default()
-        });
+        account_repository
+            .add_account(
+                AccountCharlist {
+                    identifier: Uuid::new_v4(),
+                    username: "admin".to_string(),
+                    password: "admin2".to_string(),
+                    ban: None,
+                    ..Default::default()
+                },
+                None,
+            )
+            .await;
 
         assert!(matches!(
             message
                 .handle_impl(
                     &MockSession::default(),
                     &MockConfiguration(CliVer::new(1), ServerState::Open),
-                    account_repository
+                    account_repository.account_repository()
                 )
-                .await,
-            Err(AuthenticationError::InvalidPassword)
+                .await
+                .unwrap_err(),
+            AuthenticationError::InvalidPassword
         ));
     }
 
     #[tokio::test]
     async fn checks_if_account_is_banned_or_in_analysis() {
-        let mut account_repository = MockAccountRepository::default();
+        let account_repository = TestAccountRepository::new().await;
         let expiration = Local::now()
             .checked_add_days(Days::new(3))
             .unwrap()
             .naive_local();
 
-        account_repository.add_account(MockAccountCharlist {
-            account_charlist: AccountCharlist {
-                identifier: Uuid::new_v4(),
-                username: "admin".to_string(),
-                password: "admin".to_string(),
-                ban: Some(Ban {
-                    expiration,
-                    r#type: BanType::Analysis,
-                }),
-                ..Default::default()
-            },
-            ..Default::default()
-        });
-
-        account_repository.edit_account("admin", |account| {
-            account.account_charlist.ban.as_mut().unwrap().r#type = BanType::Blocked
-        });
+        account_repository
+            .add_account(
+                AccountCharlist {
+                    identifier: Uuid::new_v4(),
+                    username: "admin".to_string(),
+                    password: "admin".to_string(),
+                    ban: Some(Ban {
+                        expiration,
+                        r#type: BanType::Analysis,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await;
 
         let message = get_login_message();
-        assert!(matches!(
-            message
-                .handle_impl(
-                    &MockSession::default(),
-                    &MockConfiguration(CliVer::new(1), ServerState::Open),
-                    account_repository
-                )
-                .await,
-            Err(AuthenticationError::AccountBlocked(_))
-        ));
+        match message
+            .handle_impl(
+                &MockSession::default(),
+                &MockConfiguration(CliVer::new(1), ServerState::Open),
+                account_repository.account_repository(),
+            )
+            .await
+        {
+            Err(AuthenticationError::AccountInAnalysis(_)) => {}
+            Err(e) => panic!("Expected AccountInAnalysis, got {e:?}"),
+            Ok(_) => panic!("Expected AccountInAnalysis, got Ok"),
+        }
+
+        let account_repository = TestAccountRepository::new().await;
+        account_repository
+            .add_account(
+                AccountCharlist {
+                    identifier: Uuid::new_v4(),
+                    username: "admin".to_string(),
+                    password: "admin".to_string(),
+                    ban: Some(Ban {
+                        expiration,
+                        r#type: BanType::Blocked,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await;
+
+        match message
+            .handle_impl(
+                &MockSession::default(),
+                &MockConfiguration(CliVer::new(1), ServerState::Open),
+                account_repository.account_repository(),
+            )
+            .await
+        {
+            Err(AuthenticationError::AccountBlocked(_)) => {}
+            Err(e) => panic!("Expected AccountBlocked, got {e:?}"),
+            Ok(_) => panic!("Expected AccountBlocked, got Ok"),
+        }
     }
 
     #[tokio::test]
     async fn successful_login_returns_the_charlist() {
-        let mut account_repository = MockAccountRepository::default();
+        let account_repository = TestAccountRepository::new().await;
         let charlist_info = CharacterInfo {
             position: (2100, 2100).into(),
             name: "charlist".to_string(),
             ..Default::default()
         };
 
-        account_repository.add_account(MockAccountCharlist {
-            account_charlist: AccountCharlist {
-                identifier: Uuid::new_v4(),
-                username: "admin".to_string(),
-                password: "admin".to_string(),
-                charlist: vec![(0, charlist_info)],
-                ..Default::default()
-            },
-            ..Default::default()
-        });
+        account_repository
+            .add_account(
+                AccountCharlist {
+                    identifier: Uuid::new_v4(),
+                    username: "admin".to_string(),
+                    password: "admin".to_string(),
+                    charlist: vec![(0, charlist_info)],
+                    ..Default::default()
+                },
+                None,
+            )
+            .await;
 
         let session = MockSession::default();
         let charlist = get_login_message()
             .handle_impl(
                 &session,
                 &MockConfiguration(CliVer::new(1), ServerState::Open),
-                account_repository,
+                account_repository.account_repository(),
             )
             .await
             .expect("Must login successfully");
@@ -348,24 +381,26 @@ mod tests {
 
     #[tokio::test]
     async fn it_cant_login_when_server_is_closed_for_maintenance_and_the_access_is_normal() {
-        let mut account_repository = MockAccountRepository::default();
-        account_repository.add_account(MockAccountCharlist {
-            account_charlist: AccountCharlist {
-                identifier: Uuid::new_v4(),
-                username: "admin".to_string(),
-                password: "admin".to_string(),
-                access: None,
-                ..Default::default()
-            },
-            ..Default::default()
-        });
+        let account_repository = TestAccountRepository::new().await;
+        account_repository
+            .add_account(
+                AccountCharlist {
+                    identifier: Uuid::new_v4(),
+                    username: "admin".to_string(),
+                    password: "admin".to_string(),
+                    access: None,
+                    ..Default::default()
+                },
+                None,
+            )
+            .await;
 
         assert_eq!(
             get_login_message()
                 .handle_impl(
                     &MockSession::default(),
                     &MockConfiguration(CliVer::new(1), ServerState::Maintenance),
-                    account_repository
+                    account_repository.account_repository()
                 )
                 .await
                 .unwrap_err(),
@@ -376,33 +411,38 @@ mod tests {
     #[tokio::test]
     async fn it_can_login_when_server_is_closed_for_maintenance_and_the_access_is_gamemaster_or_admin(
     ) {
-        let mut account_repository = MockAccountRepository::default();
-        account_repository.add_account(MockAccountCharlist {
-            account_charlist: AccountCharlist {
-                identifier: Uuid::new_v4(),
-                username: "admin".to_string(),
-                password: "admin".to_string(),
-                access: Some(AccessLevel::Administrator),
-                ..Default::default()
-            },
-            ..Default::default()
-        });
-        account_repository.add_account(MockAccountCharlist {
-            account_charlist: AccountCharlist {
-                identifier: Uuid::new_v4(),
-                username: "admin2".to_string(),
-                password: "admin".to_string(),
-                access: Some(AccessLevel::GameMaster(1)),
-                ..Default::default()
-            },
-            ..Default::default()
-        });
+        let account_repository = TestAccountRepository::new().await;
+        account_repository
+            .add_account(
+                AccountCharlist {
+                    identifier: Uuid::new_v4(),
+                    username: "admin".to_string(),
+                    password: "admin".to_string(),
+                    access: Some(AccessLevel::Administrator),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await;
+
+        account_repository
+            .add_account(
+                AccountCharlist {
+                    identifier: Uuid::new_v4(),
+                    username: "admin2".to_string(),
+                    password: "admin".to_string(),
+                    access: Some(AccessLevel::GameMaster(1)),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await;
 
         let result = get_login_message()
             .handle_impl(
                 &MockSession::default(),
                 &MockConfiguration(CliVer::new(1), ServerState::Maintenance),
-                account_repository.clone(),
+                account_repository.account_repository(),
             )
             .await;
 
@@ -417,7 +457,7 @@ mod tests {
         .handle_impl(
             &MockSession::default(),
             &MockConfiguration(CliVer::new(1), ServerState::Maintenance),
-            account_repository,
+            account_repository.account_repository(),
         )
         .await;
 

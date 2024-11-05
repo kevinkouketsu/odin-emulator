@@ -1,6 +1,6 @@
 use entity::account_ban::BanType;
 use extension::postgres::TypeDropStatement;
-use sea_orm::{ActiveEnum, DbBackend, Schema};
+use sea_orm::ActiveEnum;
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]
@@ -9,18 +9,19 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        #[cfg(feature = "sqlite")]
+        {
+            manager
+                .get_connection()
+                .execute_unprepared("PRAGMA foreign_keys = ON;")
+                .await?;
+        }
         manager
             .create_table(
                 Table::create()
                     .table(Account::Table)
                     .if_not_exists()
-                    .col(
-                        ColumnDef::new(Account::Id)
-                            .uuid()
-                            .extra("DEFAULT gen_random_uuid()")
-                            .not_null()
-                            .primary_key(),
-                    )
+                    .col(ColumnDef::new(Account::Id).uuid().not_null().primary_key())
                     .col(
                         ColumnDef::new(Account::Username)
                             .string()
@@ -43,6 +44,7 @@ impl MigrationTrait for Migration {
                     .col(
                         ColumnDef::new(Account::StorageCoin)
                             .big_integer()
+                            .not_null()
                             .default(0),
                     )
                     .col(ColumnDef::new(Account::Token).string_len(16).null())
@@ -55,6 +57,7 @@ impl MigrationTrait for Migration {
         manager
             .create_index(
                 Index::create()
+                    .name("idx_account_username")
                     .table(Account::Table)
                     .col(Account::Username)
                     .to_owned(),
@@ -84,11 +87,13 @@ impl MigrationTrait for Migration {
 }
 
 async fn create_account_ban_table(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
-    let schema = Schema::new(DbBackend::Postgres);
-
-    manager
-        .create_type(schema.create_enum_from_active_enum::<BanType>())
-        .await?;
+    #[cfg(feature = "postgresql")]
+    {
+        let schema = sea_orm::Schema::new(sea_orm::DbBackend::Postgres);
+        manager
+            .create_type(schema.create_enum_from_active_enum::<BanType>())
+            .await?;
+    }
 
     manager
         .create_table(
@@ -98,7 +103,6 @@ async fn create_account_ban_table(manager: &SchemaManager<'_>) -> Result<(), DbE
                 .col(
                     ColumnDef::new(AccountBan::Id)
                         .uuid()
-                        .extra("DEFAULT gen_random_uuid()")
                         .not_null()
                         .primary_key(),
                 )
@@ -144,6 +148,7 @@ async fn create_account_ban_table(manager: &SchemaManager<'_>) -> Result<(), DbE
     manager
         .create_index(
             Index::create()
+                .name("idx_account_ban_account_id")
                 .table(AccountBan::Table)
                 .col(AccountBan::AccountId)
                 .to_owned(),
