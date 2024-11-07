@@ -3,6 +3,7 @@ pub mod configuration;
 pub mod game_server_context;
 pub mod handlers;
 pub mod message;
+pub mod services;
 pub mod session;
 pub mod user_session;
 

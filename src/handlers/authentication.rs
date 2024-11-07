@@ -200,7 +200,8 @@ mod tests {
     use chrono::{Days, Local};
     use odin_models::{
         account::{AccessLevel, Ban, BanType},
-        account_charlist::{AccountCharlist, CharacterInfo},
+        account_charlist::AccountCharlist,
+        character::Character,
         uuid::Uuid,
     };
 
@@ -344,23 +345,28 @@ mod tests {
     #[tokio::test]
     async fn successful_login_returns_the_charlist() {
         let account_repository = TestAccountRepository::new().await;
-        let charlist_info = CharacterInfo {
-            position: (2100, 2100).into(),
+        let character = Character {
+            identifier: Uuid::new_v4(),
+            last_pos: (2100, 2100).into(),
             name: "charlist".to_string(),
             ..Default::default()
         };
 
+        let account_id = Uuid::new_v4();
         account_repository
             .add_account(
                 AccountCharlist {
-                    identifier: Uuid::new_v4(),
+                    identifier: account_id,
                     username: "admin".to_string(),
                     password: "admin".to_string(),
-                    charlist: vec![(0, charlist_info)],
                     ..Default::default()
                 },
                 None,
             )
+            .await;
+
+        account_repository
+            .add_character(account_id, character)
             .await;
 
         let session = MockSession::default();

@@ -37,6 +37,18 @@ impl MigrationTrait for Migration {
                     .to_owned(),
             )
             .await?;
+
+        #[cfg(feature = "postgresql")]
+        {
+            let schema = sea_orm::Schema::new(sea_orm::DbBackend::Postgres);
+            manager
+                .create_type(schema.create_enum_from_active_enum::<entity::character::Evolution>())
+                .await?;
+            manager
+                .create_type(schema.create_enum_from_active_enum::<entity::character::Class>())
+                .await?;
+        }
+
         manager
             .create_table(
                 Table::create()
@@ -66,6 +78,11 @@ impl MigrationTrait for Migration {
                     .col(
                         ColumnDef::new(Character::Class)
                             .custom(Class::name())
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Character::Evolution)
+                            .custom(entity::character::Evolution::name())
                             .not_null(),
                     )
                     .col(
@@ -230,6 +247,7 @@ pub enum Character {
     Merchant,
     GuildId,
     Class,
+    Evolution,
     AffectInfo,
     QuestInfo,
     Coin,

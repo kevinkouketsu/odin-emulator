@@ -52,11 +52,16 @@ impl WritableResource for FirstCharlist {
 }
 
 #[derive(Debug, Clone)]
-pub struct UpdateCharlist {
+pub struct UpdateCharlist<const DELETING: bool> {
     pub character_info: Vec<(usize, CharlistInfo)>,
 }
-impl WritableResource for UpdateCharlist {
-    const IDENTIFIER: ServerMessage = ServerMessage::UpdateCharlist;
+impl<const DELETING: bool> WritableResource for UpdateCharlist<DELETING> {
+    const IDENTIFIER: ServerMessage = if DELETING {
+        ServerMessage::DeleteCharacter
+    } else {
+        ServerMessage::CreatedCharacter
+    };
+
     type Output = UpdateCharlistRaw;
 
     fn write(self) -> Result<Self::Output, crate::WritableResourceError> {

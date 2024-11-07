@@ -2,7 +2,7 @@ use chrono::Local;
 use entity::{
     account::Entity as AccountEntity,
     account_ban::Entity as AccountBanEntity,
-    character::{Entity as CharacterEntity, Model as Character},
+    character::{Entity as CharacterEntity, Evolution, Model as Character},
     item::{Entity as ItemEntity, ItemCategory},
     start_item::Entity as StartItemEntity,
 };
@@ -10,11 +10,12 @@ use futures::{future::BoxFuture, FutureExt};
 use odin_models::{
     account::{AccessLevel, Ban, BanType},
     account_charlist::{AccountCharlist, CharacterInfo},
-    character::Class,
+    character::{Character as CharacterModel, Class, GuildLevel},
     item::Item,
     nickname::Nickname,
     position::Position,
     status::Score,
+    EquipmentSlot,
 };
 use odin_repositories::account_repository::{AccountRepository, AccountRepositoryError};
 use sea_orm::{
@@ -167,6 +168,82 @@ impl AccountRepository for DatabaseAccountRepository {
         .boxed()
     }
 
+    fn fetch_character(
+        &self,
+        account_id: Uuid,
+        slot: usize,
+    ) -> BoxFuture<Result<Option<CharacterModel>, AccountRepositoryError>> {
+        async move {
+            let Some(character) = CharacterEntity::find()
+                .filter(entity::character::Column::AccountId.eq(account_id))
+                .filter(entity::character::Column::Slot.eq(slot as i32))
+                .one(&self.connection)
+                .await
+                .map_err(map_to_fail_to_load)?
+            else {
+                return Ok(None);
+            };
+
+            let items = ItemEntity::find()
+                .filter(entity::item::Column::CharacterId.eq(character.id))
+                .order_by_asc(entity::item::Column::Type)
+                .all(&self.connection)
+                .await
+                .map_err(map_to_fail_to_load)?;
+
+            let mut equipments: Vec<(EquipmentSlot, Item)> = vec![];
+            let mut inventory: Vec<(usize, Item)> = vec![];
+
+            for item in items {
+                match item.r#type {
+                    ItemCategory::Equip => equipments.push((
+                        (item.slot as usize)
+                            .try_into()
+                            .map_err(AccountRepositoryError::CharacterNotValid)?,
+                        item.into(),
+                    )),
+                    ItemCategory::Inventory => inventory.push((item.slot as usize, item.into())),
+                }
+            }
+
+            Ok(Some(CharacterModel {
+                identifier: character.id,
+                name: character.name,
+                slot: character.slot,
+                score: Score {
+                    level: character.level as u16,
+                    reserved: character.reserved as i8,
+                    hp: character.current_hp as u32,
+                    mp: character.current_mp as u32,
+                    strength: character.strength as u16,
+                    intelligence: character.intelligence as u16,
+                    dexterity: character.dexterity as u16,
+                    constitution: character.constitution as u16,
+                    specials: [
+                        character.special0 as u16,
+                        character.special1 as u16,
+                        character.special2 as u16,
+                        character.special3 as u16,
+                    ],
+                    ..Default::default()
+                },
+                evolution: character.evolution.into(),
+                merchant: character.merchant,
+                guild: character.guild_id,
+                guild_level: character.guild_level.and_then(GuildLevel::new),
+                class: character.class.into(),
+                affect_info: character.affect_info,
+                quest_info: character.quest_info,
+                coin: character.coin,
+                experience: character.experience,
+                last_pos: Position::try_from(character.last_pos.as_str()).unwrap_or_default(),
+                inventory,
+                equipments,
+            }))
+        }
+        .boxed()
+    }
+
     fn update_token(
         &self,
         id: Uuid,
@@ -188,7 +265,6 @@ impl AccountRepository for DatabaseAccountRepository {
         }
         .boxed()
     }
-
     fn get_token(&self, id: Uuid) -> BoxFuture<Result<Option<String>, AccountRepositoryError>> {
         async move {
             Ok(AccountEntity::find()
@@ -228,71 +304,79 @@ impl AccountRepository for DatabaseAccountRepository {
                 ));
             };
 
-            let transaction = self.connection.begin().await.map_err(map_to_generic)?;
+            let name = name.to_string();
+            self.connection
+                .transaction(|transaction| {
+                    async move {
+                        let uuid = Uuid::new_v4();
+                        CharacterEntity::insert(entity::character::ActiveModel {
+                            id: Set(uuid),
+                            account_id: Set(Some(account_id)),
+                            slot: Set(slot as i32),
+                            name: Set(name),
+                            class: Set(class.into()),
+                            coin: Set(base_character.coin),
+                            experience: Set(base_character.experience),
+                            evolution: Set(Evolution::Mortal),
+                            last_pos: Set(base_character.last_pos),
+                            level: Set(base_character.level),
+                            strength: Set(base_character.strength),
+                            intelligence: Set(base_character.intelligence),
+                            dexterity: Set(base_character.dexterity),
+                            constitution: Set(base_character.constitution),
+                            special0: Set(base_character.special0),
+                            special1: Set(base_character.special1),
+                            special2: Set(base_character.special2),
+                            special3: Set(base_character.special3),
+                            current_hp: Set(base_character.current_hp),
+                            current_mp: Set(base_character.current_mp),
+                            ..Default::default()
+                        })
+                        .exec_without_returning(transaction)
+                        .await?;
 
-            let uuid = Uuid::new_v4();
-            CharacterEntity::insert(entity::character::ActiveModel {
-                id: Set(uuid),
-                account_id: Set(Some(account_id)),
-                slot: Set(slot as i32),
-                name: Set(name.to_string()),
-                class: Set(class.into()),
-                coin: Set(base_character.coin),
-                experience: Set(base_character.experience),
-                last_pos: Set(base_character.last_pos),
-                level: Set(base_character.level),
-                strength: Set(base_character.strength),
-                intelligence: Set(base_character.intelligence),
-                dexterity: Set(base_character.dexterity),
-                constitution: Set(base_character.constitution),
-                special0: Set(base_character.special0),
-                special1: Set(base_character.special1),
-                special2: Set(base_character.special2),
-                special3: Set(base_character.special3),
-                current_hp: Set(base_character.current_hp),
-                current_mp: Set(base_character.current_mp),
-                ..Default::default()
-            })
-            .exec_without_returning(&transaction)
-            .await
-            .map_err(map_to_fail_to_load)?;
+                        let start_items = StartItemEntity::find()
+                            .filter(
+                                entity::start_item::Column::Class
+                                    .eq::<entity::character::Class>(class.into()),
+                            )
+                            .all(transaction)
+                            .await?;
 
-            let start_items = StartItemEntity::find()
-                .filter(
-                    entity::start_item::Column::Class.eq::<entity::character::Class>(class.into()),
-                )
-                .all(&transaction)
+                        entity::item::Entity::insert_many(
+                            start_items
+                                .into_iter()
+                                .map(|item| entity::item::ActiveModel {
+                                    id: Set(Uuid::new_v4()),
+                                    r#type: Set(item.r#type),
+                                    item_id: Set(item.item_id),
+                                    ef1: Set(item.ef1),
+                                    efv1: Set(item.efv1),
+                                    ef2: Set(item.ef2),
+                                    efv2: Set(item.efv2),
+                                    ef3: Set(item.ef3),
+                                    efv3: Set(item.efv3),
+                                    ef4: Set(item.ef4),
+                                    efv4: Set(item.efv4),
+                                    ef5: Set(item.ef5),
+                                    efv5: Set(item.efv5),
+                                    slot: Set(item.slot),
+                                    character_id: Set(uuid),
+                                })
+                                .collect::<Vec<_>>(),
+                        )
+                        .exec_without_returning(transaction)
+                        .await?;
+
+                        Result::<Uuid, DbErr>::Ok(uuid)
+                    }
+                    .boxed()
+                })
                 .await
-                .map_err(map_to_fail_to_load)?;
-
-            entity::item::Entity::insert_many(
-                start_items
-                    .into_iter()
-                    .map(|item| entity::item::ActiveModel {
-                        id: Set(Uuid::new_v4()),
-                        r#type: Set(item.r#type),
-                        item_id: Set(item.item_id),
-                        ef1: Set(item.ef1),
-                        efv1: Set(item.efv1),
-                        ef2: Set(item.ef2),
-                        efv2: Set(item.efv2),
-                        ef3: Set(item.ef3),
-                        efv3: Set(item.efv3),
-                        ef4: Set(item.ef4),
-                        efv4: Set(item.efv4),
-                        ef5: Set(item.ef5),
-                        efv5: Set(item.efv5),
-                        slot: Set(item.slot),
-                        character_id: Set(uuid),
-                    })
-                    .collect::<Vec<_>>(),
-            )
-            .exec_without_returning(&transaction)
-            .await
-            .map_err(map_to_generic)?;
-
-            transaction.commit().await.map_err(map_to_generic)?;
-            Ok(uuid)
+                .map_err(|err| match err {
+                    sea_orm::TransactionError::Connection(db_err) => map_to_generic(db_err),
+                    sea_orm::TransactionError::Transaction(db_err) => map_to_generic(db_err),
+                })
         }
         .boxed()
     }
@@ -314,6 +398,59 @@ impl AccountRepository for DatabaseAccountRepository {
                 .map_err(map_to_generic)?;
 
             Ok(total > 0)
+        }
+        .boxed()
+    }
+
+    fn delete_character(
+        &self,
+        account_id: Uuid,
+        slot: usize,
+    ) -> BoxFuture<Result<(), AccountRepositoryError>> {
+        async move {
+            let character = CharacterEntity::find()
+                .filter(entity::character::Column::AccountId.eq(account_id))
+                .filter(entity::character::Column::Slot.eq(slot as i32))
+                .one(&self.connection)
+                .await
+                .map_err(map_to_fail_to_load)?
+                .ok_or(AccountRepositoryError::EntityNotFound)?;
+
+            let r = character
+                .delete(&self.connection)
+                .await
+                .map_err(map_to_generic)?;
+
+            match r.rows_affected {
+                0 => Err(AccountRepositoryError::Generic(
+                    "It was not possible to delete the character even if it was found".to_string(),
+                )),
+                1 => Ok(()),
+                n => Err(AccountRepositoryError::Generic(format!(
+                    "{n} were characters deleted, this should not happen"
+                ))),
+            }
+        }
+        .boxed()
+    }
+
+    fn check_password<'a>(
+        &'a self,
+        account_id: Uuid,
+        password: &'a str,
+    ) -> BoxFuture<'a, Result<bool, AccountRepositoryError>> {
+        async move {
+            let r: String = AccountEntity::find()
+                .select_only()
+                .column(entity::account::Column::Password)
+                .filter(entity::account::Column::Id.eq(account_id))
+                .into_tuple()
+                .one(&self.connection)
+                .await
+                .map_err(map_to_fail_to_load)?
+                .ok_or(AccountRepositoryError::EntityNotFound)?;
+
+            Ok(r == password)
         }
         .boxed()
     }

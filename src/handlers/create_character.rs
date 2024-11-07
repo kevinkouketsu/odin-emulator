@@ -34,7 +34,7 @@ impl CreateCharacter {
     ) -> Result<Vec<(usize, CharacterInfo)>, CreateCharacterError> {
         match self.handle_impl(account_id, account_repository).await {
             Ok(charlist) => {
-                session.send(UpdateCharlist {
+                session.send(UpdateCharlist::<false> {
                     character_info: charlist
                         .clone()
                         .into_iter()

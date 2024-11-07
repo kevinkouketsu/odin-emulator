@@ -1,7 +1,7 @@
 use futures::future::BoxFuture;
 use odin_models::{
     account_charlist::{AccountCharlist, CharacterInfo},
-    character::Class,
+    character::{Character, Class},
     nickname::Nickname,
     uuid::Uuid,
 };
@@ -17,6 +17,12 @@ pub trait AccountRepository: Clone + 'static {
         &self,
         account_id: Uuid,
     ) -> BoxFuture<Result<Vec<(usize, CharacterInfo)>, AccountRepositoryError>>;
+
+    fn fetch_character(
+        &self,
+        account_id: Uuid,
+        slot: usize,
+    ) -> BoxFuture<Result<Option<Character>, AccountRepositoryError>>;
 
     fn update_token(
         &self,
@@ -38,6 +44,18 @@ pub trait AccountRepository: Clone + 'static {
         &'a self,
         name: &'a Nickname,
     ) -> BoxFuture<'a, Result<bool, AccountRepositoryError>>;
+
+    fn delete_character(
+        &self,
+        account_id: Uuid,
+        slot: usize,
+    ) -> BoxFuture<Result<(), AccountRepositoryError>>;
+
+    fn check_password<'a>(
+        &'a self,
+        account_id: Uuid,
+        password: &'a str,
+    ) -> BoxFuture<'a, Result<bool, AccountRepositoryError>>;
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -47,4 +65,10 @@ pub enum AccountRepositoryError {
 
     #[error("{0}")]
     Generic(String),
+
+    #[error("The entity has not been found")]
+    EntityNotFound,
+
+    #[error("Character is not valid")]
+    CharacterNotValid(String),
 }

@@ -51,11 +51,24 @@ impl ActiveModelBehavior for ActiveModel {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "item_category")]
 pub enum ItemCategory {
     #[sea_orm(string_value = "equip")]
     Equip,
     #[sea_orm(string_value = "inventory")]
     Inventory,
+}
+
+impl From<Model> for odin_models::item::Item {
+    fn from(value: Model) -> Self {
+        odin_models::item::Item {
+            id: value.item_id as u16,
+            effects: [
+                (value.ef1 as u8, value.efv1 as u8).into(),
+                (value.ef2 as u8, value.efv2 as u8).into(),
+                (value.ef3 as u8, value.efv3 as u8).into(),
+            ],
+        }
+    }
 }

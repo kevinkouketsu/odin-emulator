@@ -1,5 +1,6 @@
 pub mod authentication;
 pub mod create_character;
+pub mod delete_character;
 pub mod numeric_token;
 
 #[cfg(test)]
@@ -11,10 +12,13 @@ pub mod tests {
     };
     use deku::prelude::*;
     use odin_database::{
+        entity::item::ItemCategory,
         sea_orm::{prelude::*, ActiveValue::NotSet, Database, Set},
         DatabaseService,
     };
-    use odin_models::{account_charlist::AccountCharlist, uuid::Uuid};
+    use odin_models::{
+        account_charlist::AccountCharlist, character::Character, item::Item, uuid::Uuid,
+    };
     use odin_networking::WritableResource;
     use std::{ops::Deref, sync::RwLock};
 
@@ -37,6 +41,7 @@ pub mod tests {
             } else {
                 NotSet
             };
+
             let account_model = odin_database::entity::account::ActiveModel {
                 id: account_identifier,
                 username: Set(account.username),
@@ -73,31 +78,84 @@ pub mod tests {
                 .await
                 .unwrap();
             }
+        }
 
-            if account.charlist.is_empty() {
-                return;
-            }
-
-            odin_database::entity::character::Entity::insert_many(
-                account
-                    .charlist
-                    .into_iter()
-                    .map(
-                        |(i, character)| odin_database::entity::character::ActiveModel {
-                            id: Set(Uuid::new_v4()),
-                            account_id: Set(Some(account_model.id)),
-                            slot: Set(i as i32),
-                            name: Set(character.name),
-                            class: Set(character.class.into()),
-                            last_pos: Set(format!("({})", character.position)),
-                            ..Default::default()
-                        },
-                    )
-                    .collect::<Vec<_>>(),
+        pub async fn add_character(&self, account_id: Uuid, character: Character) {
+            odin_database::entity::character::Entity::insert(
+                odin_database::entity::character::ActiveModel {
+                    id: Set(character.identifier),
+                    account_id: Set(Some(account_id)),
+                    slot: Set(character.slot),
+                    name: Set(character.name.clone()),
+                    class: Set(character.class.into()),
+                    coin: Set(character.coin),
+                    last_pos: Set(format!("({})", character.last_pos)),
+                    evolution: Set(character.evolution.into()),
+                    ..Default::default()
+                },
             )
             .exec_without_returning(&self.get_connection())
             .await
             .unwrap();
+
+            let mut items = Self::get_items(
+                character.identifier,
+                &character.equipments,
+                ItemCategory::Equip,
+            );
+            items.extend(Self::get_items(
+                character.identifier,
+                &character.inventory,
+                ItemCategory::Inventory,
+            ));
+
+            if !items.is_empty() {
+                odin_database::entity::item::Entity::insert_many(items)
+                    .exec_without_returning(&self.get_connection())
+                    .await
+                    .unwrap();
+            }
+        }
+
+        fn get_items<T: Into<usize> + Copy>(
+            character_id: Uuid,
+            items: &[(T, Item)],
+            category: ItemCategory,
+        ) -> Vec<odin_database::entity::item::ActiveModel> {
+            items
+                .iter()
+                .map(
+                    |(index, equipment)| odin_database::entity::item::ActiveModel {
+                        id: Set(Uuid::new_v4()),
+                        r#type: Set(category),
+                        slot: Set((*index).into() as i16),
+                        item_id: Set(equipment.id as i16),
+                        ef1: Set(equipment.effects[0].index as i16),
+                        efv1: Set(equipment.effects[0].value as i16),
+                        ef2: Set(equipment.effects[1].index as i16),
+                        efv2: Set(equipment.effects[1].value as i16),
+                        ef3: Set(equipment.effects[2].index as i16),
+                        efv3: Set(equipment.effects[2].value as i16),
+                        character_id: Set(character_id),
+                        ..Default::default()
+                    },
+                )
+                .collect::<Vec<_>>()
+        }
+
+        pub async fn add_account_with_characters(
+            &self,
+            account_charlist: AccountCharlist,
+            characters: Vec<Character>,
+        ) -> Uuid {
+            let account_id = account_charlist.identifier;
+            self.add_account(account_charlist, None).await;
+
+            for character in characters {
+                self.add_character(account_id, character).await;
+            }
+
+            account_id
         }
     }
     impl Deref for TestAccountRepository {

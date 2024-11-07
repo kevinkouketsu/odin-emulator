@@ -13,6 +13,7 @@ pub struct Model {
     pub merchant: i16,
     pub guild_id: Option<i16>,
     pub class: Class,
+    pub evolution: Evolution,
     pub affect_info: i16,
     pub quest_info: i16,
     pub coin: i32,
@@ -95,6 +96,49 @@ impl From<odin_models::character::Class> for Class {
             odin_models::character::Class::Foema => Class::Foema,
             odin_models::character::Class::BeastMaster => Class::BeastMaster,
             odin_models::character::Class::Huntress => Class::Huntress,
+        }
+    }
+}
+impl From<Class> for odin_models::character::Class {
+    fn from(value: Class) -> Self {
+        match value {
+            Class::TransKnight => odin_models::character::Class::TransKnight,
+            Class::Foema => odin_models::character::Class::Foema,
+            Class::BeastMaster => odin_models::character::Class::BeastMaster,
+            Class::Huntress => odin_models::character::Class::Huntress,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "evolution")]
+pub enum Evolution {
+    #[sea_orm(string_value = "mortal")]
+    Mortal,
+    #[sea_orm(string_value = "arch")]
+    Arch,
+    #[sea_orm(string_value = "celestial")]
+    Celestial,
+    #[sea_orm(string_value = "subcelestial")]
+    SubCelestial,
+}
+impl From<odin_models::character::Evolution> for Evolution {
+    fn from(value: odin_models::character::Evolution) -> Self {
+        match value {
+            odin_models::character::Evolution::Mortal => Evolution::Mortal,
+            odin_models::character::Evolution::Arch => Evolution::Arch,
+            odin_models::character::Evolution::Celestial => Evolution::Celestial,
+            odin_models::character::Evolution::SubCelestial => Evolution::SubCelestial,
+        }
+    }
+}
+impl From<Evolution> for odin_models::character::Evolution {
+    fn from(value: Evolution) -> Self {
+        match value {
+            Evolution::Mortal => odin_models::character::Evolution::Mortal,
+            Evolution::Arch => odin_models::character::Evolution::Arch,
+            Evolution::Celestial => odin_models::character::Evolution::Celestial,
+            Evolution::SubCelestial => odin_models::character::Evolution::SubCelestial,
         }
     }
 }

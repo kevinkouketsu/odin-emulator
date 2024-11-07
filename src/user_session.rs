@@ -98,6 +98,18 @@ impl UserSession {
                         account_charlist.charlist = new_charlist;
                     }
                 }
+                Message::DeleteCharacter(message) if *token => {
+                    if let Ok(new_charlist) = message
+                        .handle(
+                            account_charlist.identifier,
+                            &session,
+                            context.account_repository.clone(),
+                        )
+                        .await
+                    {
+                        account_charlist.charlist = new_charlist;
+                    }
+                }
                 message => log::error!("Got a message in incorrect state: {:?}", message),
             },
         }

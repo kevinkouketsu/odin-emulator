@@ -1,12 +1,15 @@
-use crate::{item::Item, position::Position, status::Score};
+use crate::{item::Item, position::Position, status::Score, EquipmentSlot};
 use thiserror::Error;
+use uuid::Uuid;
 
 #[derive(Debug, Default, Clone)]
 pub struct Character {
+    pub identifier: Uuid,
     pub name: String,
     // TODO maybe temporary
     pub slot: i32,
     pub score: Score,
+    pub evolution: Evolution,
     // TODO i guess this is a bitfield so we could use a bitflag type here
     pub merchant: i16,
     pub guild: Option<i16>,
@@ -17,11 +20,11 @@ pub struct Character {
     // TODO i guess this is a bitfield so we could use a bitflag type here
     pub quest_info: i16,
     // TODO change to Wallet type
-    pub gold: i64,
+    pub coin: i32,
     pub experience: i64,
     pub last_pos: Position,
     pub inventory: Vec<(usize, Item)>,
-    pub equipments: Vec<(usize, Item)>,
+    pub equipments: Vec<(EquipmentSlot, Item)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,6 +49,10 @@ impl GuildLevel {
         }
     }
 }
+
+#[derive(Debug, Error)]
+#[error("Invalid guild level: {0}")]
+pub struct InvalidGuildLevelError(i32);
 
 #[derive(Debug, Copy, Clone, Default)]
 pub enum Class {
@@ -83,3 +90,44 @@ impl TryFrom<i32> for Class {
 #[derive(Debug, Error)]
 #[error("Fail to parse to class: {0}")]
 pub struct FailToParseClass(i32);
+
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+pub enum Evolution {
+    #[default]
+    Mortal = 1,
+    Arch = 2,
+    Celestial = 3,
+    SubCelestial = 4,
+}
+impl Evolution {
+    pub fn as_index(self) -> usize {
+        self as usize
+    }
+}
+impl TryFrom<i32> for Evolution {
+    type Error = FailToParseEvolution;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        Ok(match value {
+            1 => Evolution::Mortal,
+            2 => Evolution::Arch,
+            3 => Evolution::Celestial,
+            4 => Evolution::SubCelestial,
+            _ => return Err(FailToParseEvolution(value)),
+        })
+    }
+}
+impl std::cmp::Ord for Evolution {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.as_index().cmp(&other.as_index())
+    }
+}
+impl std::cmp::PartialOrd for Evolution {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("Fail to parse evolution: {0}")]
+pub struct FailToParseEvolution(i32);

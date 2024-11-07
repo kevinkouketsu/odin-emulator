@@ -28,6 +28,7 @@ chrono = "0.4.38"
 
 [dev-dependencies]
 odin-database = { path = "./odin-database", features = ["sqlite"] }
+rstest = { version = "0.23.0" }
 
 [workspace]
 members = [

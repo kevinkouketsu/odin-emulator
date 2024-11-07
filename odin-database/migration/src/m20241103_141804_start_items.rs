@@ -1,4 +1,7 @@
-use entity::{character::Class, item::ItemCategory};
+use entity::{
+    character::{Class, Evolution},
+    item::ItemCategory,
+};
 use sea_orm::{prelude::*, ActiveEnum, Set};
 use sea_orm_migration::prelude::{ColumnDef, *};
 
@@ -199,6 +202,7 @@ impl MigrationTrait for Migration {
                 slot: Set(0),
                 name: Set("TransKnight".to_string()),
                 class: Set(Class::TransKnight),
+                evolution: Set(Evolution::Mortal),
                 strength: Set(8),
                 intelligence: Set(9),
                 dexterity: Set(13),
@@ -214,6 +218,7 @@ impl MigrationTrait for Migration {
                 slot: Set(0),
                 name: Set("Foema".to_string()),
                 class: Set(Class::Foema),
+                evolution: Set(Evolution::Mortal),
                 strength: Set(5),
                 intelligence: Set(8),
                 dexterity: Set(5),
@@ -229,6 +234,7 @@ impl MigrationTrait for Migration {
                 slot: Set(0),
                 name: Set("BeastMaster".to_string()),
                 class: Set(Class::BeastMaster),
+                evolution: Set(Evolution::Mortal),
                 strength: Set(6),
                 intelligence: Set(6),
                 dexterity: Set(9),
@@ -244,6 +250,7 @@ impl MigrationTrait for Migration {
                 slot: Set(0),
                 name: Set("Huntress".to_string()),
                 class: Set(Class::Huntress),
+                evolution: Set(Evolution::Mortal),
                 strength: Set(8),
                 intelligence: Set(9),
                 dexterity: Set(13),
