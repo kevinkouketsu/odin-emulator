@@ -5,6 +5,7 @@ use crate::handlers::{
     numeric_token::NumericToken,
 };
 use deku::prelude::*;
+use odin_macros::HandlerDerive;
 use odin_networking::{
     messages::{
         client::{
@@ -18,35 +19,16 @@ use odin_networking::{
 };
 use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, HandlerDerive)]
 pub enum Message {
+    #[raw = "LoginMessageRaw"]
     Login(Authentication),
+    #[raw = "NumericTokenRaw"]
     Token(NumericToken),
+    #[raw = "CreateCharacterRaw"]
     CreateCharacter(CreateCharacter),
+    #[raw = "DeleteCharacterRaw"]
     DeleteCharacter(DeleteCharacter),
-}
-impl TryFrom<((&[u8], usize), Header)> for Message {
-    type Error = MessageError;
-
-    fn try_from((rest, header): ((&[u8], usize), Header)) -> Result<Self, Self::Error> {
-        let message_type = ClientMessage::try_from(header.typ)
-            .map_err(|_| MessageError::NotRecognized(header.clone()))?;
-
-        Ok(match message_type {
-            ClientMessage::Login => {
-                Message::Login(LoginMessageRaw::from_bytes(rest)?.1.try_into()?)
-            }
-            ClientMessage::Token => {
-                Message::Token(NumericTokenRaw::from_bytes(rest)?.1.try_into()?)
-            }
-            ClientMessage::CreateCharacter => {
-                Message::CreateCharacter(CreateCharacterRaw::from_bytes(rest)?.1.try_into()?)
-            }
-            ClientMessage::DeleteCharacter => {
-                Message::DeleteCharacter(DeleteCharacterRaw::from_bytes(rest)?.1.try_into()?)
-            }
-        })
-    }
 }
 
 #[derive(Debug, Error)]

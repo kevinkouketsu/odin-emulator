@@ -1558,6 +1558,7 @@ dependencies = [
  "log",
  "message-io",
  "odin-database",
+ "odin-macros",
  "odin-models",
  "odin-networking",
  "odin-repositories",
