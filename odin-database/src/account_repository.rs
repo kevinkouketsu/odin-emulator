@@ -252,7 +252,7 @@ impl AccountRepository for DatabaseAccountRepository {
         async move {
             let account = entity::account::ActiveModel {
                 id: ActiveValue::Set(id),
-                token: Set(new_token.map(Into::into)),
+                token: Set(new_token),
                 ..Default::default()
             };
 

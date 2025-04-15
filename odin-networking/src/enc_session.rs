@@ -5,19 +5,24 @@ use rand::Rng;
 use std::rc::Rc;
 use thiserror::Error;
 
-const KEYTABLE_LENGHT: usize = 512;
+const KEYTABLE_LENGTH: usize = 512;
 const HALF_KEYTABLE_LENGTH: usize = 255;
 
+/// A session for encrypting and decrypting network messages.
+/// Uses a shared keytable for encryption/decryption and maintains a session ID.
 #[derive(Debug, Clone)]
 pub struct EncDecSession {
-    keytable: Rc<[u8; 512]>,
+    keytable: Rc<[u8; KEYTABLE_LENGTH]>,
     id: u16,
 }
+
 impl EncDecSession {
-    pub fn new(id: u16, keytable: Rc<[u8; KEYTABLE_LENGHT]>) -> Self {
+    /// Creates a new encryption/decryption session with the given ID and keytable.
+    pub fn new(id: u16, keytable: Rc<[u8; KEYTABLE_LENGTH]>) -> Self {
         Self { keytable, id }
     }
 
+    /// Encrypts a message using the session's keytable.
     pub fn encrypt<R: WritableResource>(&self, data: R) -> Result<Bytes, EncDecError> {
         let mut rng = rand::thread_rng();
         let keyword_index = rng.gen_range::<u8, _>(0u8..HALF_KEYTABLE_LENGTH as u8);
@@ -62,6 +67,7 @@ impl EncDecSession {
         Ok(buffer.into())
     }
 
+    /// Decrypts a message using the session's keytable.
     pub fn decrypt(&self, data: &mut [u8]) -> Result<(), EncDecError> {
         let (_, header) = Header::from_bytes((data, 0))?;
         assert_eq!(data.len(), header.size as usize);
@@ -100,7 +106,7 @@ impl EncDecSession {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum EncDecError {
-    #[error("Invalid checksum {0} {1}")]
+    #[error("Invalid checksum: expected {0}, got {1}")]
     InvalidChecksum(u8, u8),
 
     #[error(transparent)]
@@ -129,26 +135,24 @@ mod tests {
         }
     }
 
-    #[test]
-    fn appends_the_header_at_beginning_of_message() {
+    fn create_test_session() -> EncDecSession {
         let mut rng = rand::thread_rng();
-
-        let mut array = [0u8; 512];
+        let mut array = [0u8; KEYTABLE_LENGTH];
         rng.fill(&mut array);
+        EncDecSession::new(0, Rc::new(array))
+    }
 
-        let enc_session = EncDecSession::new(0, Rc::new(array));
+    #[test]
+    fn encrypts_message_with_header() {
+        let enc_session = create_test_session();
         let message = enc_session.encrypt(PayloadTest { a: 1, b: 2 }).unwrap();
 
         assert_ne!(message.len(), std::mem::size_of::<PayloadTest>());
     }
 
     #[test]
-    fn sums_the_size_of_header_with_the_payload() {
-        let mut rng = rand::thread_rng();
-        let mut array = [0u8; 512];
-        rng.fill(&mut array);
-
-        let enc_session = EncDecSession::new(0, Rc::new(array));
+    fn includes_header_size_in_total_message_size() {
+        let enc_session = create_test_session();
         let message = enc_session.encrypt(PayloadTest { a: 1, b: 2 }).unwrap();
 
         assert_eq!(
@@ -158,18 +162,17 @@ mod tests {
     }
 
     #[test]
-    fn encryption_roundtrip() {
-        let mut rng = rand::thread_rng();
-        let mut array = [0u8; 512];
-        rng.fill(&mut array);
-
-        let enc_session = EncDecSession::new(255, Rc::new(array));
+    fn successfully_decrypts_encrypted_message() {
+        let enc_session = create_test_session();
         let payload = PayloadTest { a: 1, b: 2 };
         let mut message = enc_session.encrypt(payload.clone()).unwrap().to_vec();
+
+        // Verify the message is encrypted
         assert_ne!(
             PayloadTest::from_bytes((&message[12..], 0)).unwrap().1,
             payload
         );
+
         enc_session.decrypt(&mut message).unwrap();
 
         let (_, decrypted) = PayloadTest::from_bytes((&message[12..], 0)).unwrap();
@@ -177,12 +180,8 @@ mod tests {
     }
 
     #[test]
-    fn client_id() {
-        let mut rng = rand::thread_rng();
-        let mut array = [0u8; 512];
-        rng.fill(&mut array);
-
-        let enc_session = EncDecSession::new(255, Rc::new(array));
+    fn preserves_client_id_during_encryption() {
+        let enc_session = EncDecSession::new(255, Rc::new([0u8; KEYTABLE_LENGTH]));
         let mut message = enc_session
             .encrypt(PayloadTest { a: 1, b: 2 })
             .unwrap()
@@ -193,12 +192,8 @@ mod tests {
     }
 
     #[test]
-    fn message_identifier() {
-        let mut rng = rand::thread_rng();
-        let mut array = [0u8; 512];
-        rng.fill(&mut array);
-
-        let enc_session = EncDecSession::new(255, Rc::new(array));
+    fn preserves_message_identifier_during_encryption() {
+        let enc_session = EncDecSession::new(255, Rc::new([0u8; KEYTABLE_LENGTH]));
         let mut message = enc_session
             .encrypt(PayloadTest { a: 1, b: 2 })
             .unwrap()
@@ -228,12 +223,8 @@ mod tests {
     }
 
     #[test]
-    fn the_packet_can_decide_the_client_id() {
-        let mut rng = rand::thread_rng();
-        let mut array = [0u8; 512];
-        rng.fill(&mut array);
-
-        let enc_session = EncDecSession::new(255, Rc::new(array));
+    fn allows_payload_to_override_client_id() {
+        let enc_session = EncDecSession::new(255, Rc::new([0u8; KEYTABLE_LENGTH]));
         let mut message = enc_session
             .encrypt(PayloadWithClientId(1))
             .unwrap()

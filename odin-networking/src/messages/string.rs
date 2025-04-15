@@ -78,7 +78,13 @@ impl<const N: usize> TryFrom<String> for FixedSizeString<N> {
     type Error = FixedSizeStringError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.as_str().try_into()
+        let len = value.len();
+        match len > N {
+            true => Err(FixedSizeStringError::InvalidSize(value, len)),
+            false => Ok(FixedSizeString {
+                str: CString::new(value).map_err(FixedSizeStringError::NulError)?,
+            }),
+        }
     }
 }
 impl<const N: usize> TryFrom<&str> for FixedSizeString<N> {
@@ -97,7 +103,7 @@ impl<const N: usize> TryFrom<&str> for FixedSizeString<N> {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum FixedSizeStringError {
-    #[error("The string size is bigger than the fixed size: {0} {0}")]
+    #[error("The string size is bigger than the fixed size: {0} (size: {1})")]
     InvalidSize(String, usize),
 
     #[error(transparent)]
@@ -109,7 +115,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn enc_fixed_sized_string() {
+    fn encodes_string_with_padding() {
         let string: FixedSizeString<10> = "hello".to_string().try_into().unwrap();
         let encoded_string: Vec<u8> = string.try_into().unwrap();
 
@@ -117,20 +123,28 @@ mod tests {
     }
 
     #[test]
-    fn decode_fixed_size_string() {
+    fn decodes_padded_string() {
         let string: FixedSizeString<10> = "hello".to_string().try_into().unwrap();
         let encoded_string: Vec<u8> = string.try_into().unwrap();
         let (_, decoded) = FixedSizeString::<10>::from_bytes((&encoded_string, 0)).unwrap();
 
         assert_eq!(decoded.str.as_bytes().len(), 5);
+        assert_eq!(decoded.str.to_str().unwrap(), "hello");
     }
 
     #[test]
-    fn must_have_space_for_null_terminate() {
-        let string: FixedSizeString<5> = "hello".to_string().try_into().unwrap();
-        let encoded_string: Result<Vec<u8>, _> = string.try_into();
+    fn requires_space_for_null_terminator() {
+        let result = FixedSizeString::<5>::try_from("hello".to_string());
+        assert!(matches!(
+            result,
+            Err(FixedSizeStringError::InvalidSize(_, 5))
+        ));
+    }
 
-        assert!(encoded_string.is_err());
+    #[test]
+    fn handles_nul_bytes_in_string() {
+        let result = FixedSizeString::<10>::try_from("hello\0world".to_string());
+        assert!(matches!(result, Err(FixedSizeStringError::NulError(_))));
     }
 
     #[derive(Clone, Debug, PartialEq, Eq, DekuWrite, DekuRead)]
@@ -142,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn must_consume_the_entire_length() {
+    fn maintains_alignment_in_complex_struct() {
         let value = TwoAlignedStrings {
             a: "wyd".to_string().try_into().unwrap(),
             b: 10,
@@ -157,7 +171,7 @@ mod tests {
     }
 
     #[test]
-    fn cstring_bigger_than_the_fixed_size() {
+    fn rejects_strings_exceeding_fixed_size() {
         let bytes = b"more than two caracteres\0";
         match FixedSizeString::<10>::from_bytes((bytes.as_slice(), 0)) {
             Err(DekuError::Parse(x)) => assert!(x.contains("String bigger than expected")),
@@ -166,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn try_from_string_must_check_size() {
+    fn validates_size_during_conversion() {
         let str = "bigger than two bytes".to_string();
         assert!(FixedSizeString::<2>::try_from(str).is_err());
     }

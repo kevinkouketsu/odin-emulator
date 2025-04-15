@@ -44,9 +44,8 @@ impl HandshakeState {
                     Err(_) => None,
                 }) {
                     let value: [u8; 4] = data;
-                    match u32::from_le_bytes(value) == HANDSHAKE_VALUE {
-                        true => *self = HandshakeState::Done(Default::default()),
-                        false => {}
+                    if u32::from_le_bytes(value) == HANDSHAKE_VALUE {
+                        *self = HandshakeState::Done(Default::default())
                     }
                 }
             }

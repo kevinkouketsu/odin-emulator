@@ -166,16 +166,24 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn then_it_must_not_update_the_token() {
+        async fn when_the_user_logs_in_with_correct_token_then_it_does_not_update_the_token() {
             let repository = TestAccountRepository::new().await;
-
             let account = new_account();
+            let original_token = "1208".to_string();
             repository
-                .add_account(account.clone(), Some("1208".to_string()))
+                .add_account(account.clone(), Some(original_token.clone()))
                 .await;
 
+            // Get token before operation
+            let token_before = repository
+                .account_repository()
+                .get_token(account.identifier)
+                .await
+                .unwrap()
+                .unwrap();
+
             assert!(NumericToken {
-                token: "1208".to_string(),
+                token: original_token.clone(),
                 changing: false,
             }
             .handle_impl(
@@ -185,13 +193,23 @@ mod tests {
             )
             .await
             .is_ok());
+
+            let token_after = repository
+                .account_repository()
+                .get_token(account.identifier)
+                .await
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(token_before, token_after);
+            assert_eq!(token_after, original_token);
         }
 
         mod when_the_user_tries_to_change_the_token {
             use super::*;
 
             #[tokio::test]
-            async fn without_entering_the_correct_token_beforehand() {
+            async fn without_entering_the_correct_token_beforehand_it_returns_an_error() {
                 let repository = TestAccountRepository::new().await;
                 let account = new_account();
                 repository
@@ -215,7 +233,7 @@ mod tests {
             }
 
             #[tokio::test]
-            async fn with_previously_correct_token() {
+            async fn with_previously_correct_token_it_changes_the_token() {
                 let repository = TestAccountRepository::new().await;
                 let account = new_account();
                 repository

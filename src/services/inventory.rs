@@ -38,16 +38,27 @@ mod tests {
 
     #[test]
     fn iter_only_iterates_on_non_empty_items() {
-        let item = Item::from(737);
+        let item1 = Item::from(737);
+        let item2 = Item::from(738);
+        let item3 = Item::from(739);
+        let item4 = Item::from(740);
 
-        let inventory = [(0, item), (2, item), (3, item), (9, item)];
+        let inventory: [(usize, Item); 4] = [(0, item1), (2, item2), (3, item3), (9, item4)];
+        let inventory_with_empty = Inventory::from(inventory);
+
+        let iterated_items: Vec<_> = inventory_with_empty
+            .iter()
+            .map(|(slot, item)| (slot, item.to_owned()))
+            .collect();
 
         assert_eq!(
-            Inventory::from(inventory)
-                .iter()
-                .map(|(i, item)| (i, item.to_owned()))
-                .collect::<Vec<_>>(),
-            inventory.to_vec()
-        )
+            iterated_items.len(),
+            4,
+            "Should only iterate over non-empty slots"
+        );
+        assert_eq!(iterated_items[0], (0, item1), "First slot should match");
+        assert_eq!(iterated_items[1], (2, item2), "Second slot should match");
+        assert_eq!(iterated_items[2], (3, item3), "Third slot should match");
+        assert_eq!(iterated_items[3], (9, item4), "Fourth slot should match");
     }
 }
