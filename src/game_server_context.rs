@@ -1,7 +1,6 @@
 use crate::{
     client_id_manager::ClientIdManager,
-    configuration::{Configuration, ServerState},
-    handlers::authentication::CliVer,
+    configuration::{CliVer, Configuration, ServerState},
     user_session::UserSession,
     GameServerSignals,
 };
@@ -56,9 +55,8 @@ where
 
     pub async fn get_client_id_by_resource_id(&self, resource_id: ResourceId) -> Option<usize> {
         for session in self.sessions.iter() {
-            match session.1.read().await.get_resource_id() == resource_id {
-                true => return Some(*session.0),
-                false => continue,
+            if session.1.read().await.get_resource_id() == resource_id {
+                return Some(*session.0);
             }
         }
 

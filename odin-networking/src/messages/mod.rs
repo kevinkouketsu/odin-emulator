@@ -19,6 +19,7 @@ pub enum ClientMessage {
     Token,
     CreateCharacter,
     DeleteCharacter,
+    EnterWorld,
 }
 impl TryFrom<u16> for ClientMessage {
     type Error = InvalidMessageType;
@@ -29,6 +30,7 @@ impl TryFrom<u16> for ClientMessage {
             0xFDE => ClientMessage::Token,
             0x20F => ClientMessage::CreateCharacter,
             0x211 => ClientMessage::DeleteCharacter,
+            0x213 => ClientMessage::EnterWorld,
             _ => return Err(InvalidMessageType(value)),
         })
     }

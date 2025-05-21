@@ -28,13 +28,15 @@ impl WritableResource for FirstCharlist {
 
     fn write(self) -> Result<Self::Output, crate::WritableResourceError> {
         let character_info = CharlistInfoRaw::from(self.character_info.as_slice());
+        let token = array::from_fn(|i| {
+            self.token
+                .get(i)
+                .expect("Generated token must have the same size as packet")
+                .to_owned()
+        });
+
         Ok(FirstCharlistRaw {
-            token: array::from_fn(|i| {
-                self.token
-                    .get(i)
-                    .expect("Generated token must have the same size as packet")
-                    .to_owned()
-            }),
+            token,
             data: character_info,
             storage_items: self.storage.items.into_iter().fold(
                 [ItemRaw::default(); MAX_STORAGE_ITEMS],
@@ -164,19 +166,16 @@ impl From<&[(usize, CharlistInfo)]> for CharlistInfoRaw {
 }
 fn map_character_info<F, T, const N: usize>(
     character_info: &[(usize, CharlistInfo)],
-    mut callback: F,
+    callback: F,
 ) -> [T; N]
 where
-    F: FnMut(&CharlistInfo) -> T,
+    F: Fn(&CharlistInfo) -> T,
     T: Default,
 {
     array::from_fn(|i| {
         character_info
             .iter()
-            .find_map(|(index, char)| match *index == i {
-                true => Some(callback(char)),
-                false => None,
-            })
+            .find_map(|(index, char)| (*index == i).then(|| callback(char)))
             .unwrap_or_default()
     })
 }

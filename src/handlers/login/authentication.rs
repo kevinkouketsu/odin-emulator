@@ -1,5 +1,5 @@
 use crate::{
-    configuration::{Configuration, ServerState},
+    configuration::{CliVer, Configuration, ServerState},
     session::{SessionError, SessionTrait},
 };
 use chrono::{Local, NaiveDateTime};
@@ -137,32 +137,6 @@ impl TryFrom<LoginMessageRaw> for Authentication {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct CliVer(u32);
-impl CliVer {
-    pub fn new(cliver: u32) -> Self {
-        CliVer(cliver)
-    }
-
-    pub fn from_encrypted(cliver: u32) -> Self {
-        CliVer(cliver.wrapping_shr((cliver & 28).wrapping_shr(2).wrapping_add(5)))
-    }
-
-    pub fn get_version(&self) -> u32 {
-        self.0
-    }
-}
-impl From<CliVer> for u32 {
-    fn from(value: CliVer) -> Self {
-        value.0
-    }
-}
-impl PartialEq<u32> for CliVer {
-    fn eq(&self, other: &u32) -> bool {
-        self.0 == *other
-    }
-}
-
 #[derive(Debug, Eq, PartialEq, Error)]
 pub enum AuthenticationError {
     #[error("The client version {0} is not valid")]
@@ -194,7 +168,7 @@ pub enum AuthenticationError {
 mod tests {
     use super::*;
     use crate::{
-        configuration::ServerState,
+        configuration::{CliVer, ServerState},
         handlers::tests::{MockConfiguration, MockSession, TestAccountRepository},
     };
     use chrono::{Days, Local};

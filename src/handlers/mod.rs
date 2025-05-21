@@ -1,13 +1,9 @@
-pub mod authentication;
-pub mod create_character;
-pub mod delete_character;
-pub mod numeric_token;
+pub mod login;
 
 #[cfg(test)]
 pub mod tests {
-    use super::authentication::CliVer;
     use crate::{
-        configuration::{Configuration, ServerState},
+        configuration::{CliVer, Configuration, ServerState},
         session::{SessionError, SessionTrait},
     };
     use deku::prelude::*;

@@ -1,7 +1,8 @@
-use crate::handlers::{
+use crate::handlers::login::{
     authentication::{Authentication, AuthenticationError},
     create_character::CreateCharacter,
     delete_character::DeleteCharacter,
+    enter_world::EnterWorld,
     numeric_token::NumericToken,
 };
 use deku::prelude::*;
@@ -10,7 +11,7 @@ use odin_networking::{
     messages::{
         client::{
             create_character::CreateCharacterRaw, delete_character::DeleteCharacterRaw,
-            login::LoginMessageRaw, numeric_token::NumericTokenRaw,
+            enter_world::EnterWorldRaw, login::LoginMessageRaw, numeric_token::NumericTokenRaw,
         },
         header::Header,
         ClientMessage,
@@ -19,6 +20,8 @@ use odin_networking::{
 };
 use thiserror::Error;
 
+/// Represents a client message that can be handled by the server.
+/// Each variant corresponds to a specific message type and its associated handler.
 #[derive(Debug, HandlerDerive)]
 pub enum Message {
     #[raw = "LoginMessageRaw"]
@@ -29,20 +32,22 @@ pub enum Message {
     CreateCharacter(CreateCharacter),
     #[raw = "DeleteCharacterRaw"]
     DeleteCharacter(DeleteCharacter),
+    #[raw = "EnterWorldRaw"]
+    EnterWorld(EnterWorld),
 }
 
 #[derive(Debug, Error)]
 pub enum MessageError {
-    #[error("The packet is not implemented yet: {0:?}")]
+    #[error("Message type {0:?} is not yet implemented")]
     NotImplemented(Header),
 
-    #[error("Invalid packet, not recognized: {0:?}")]
+    #[error("Unknown message type: {0:?}")]
     NotRecognized(Header),
 
-    #[error("Invalid packet structure")]
+    #[error("Invalid message structure: {0}")]
     InvalidStructure(#[from] DekuError),
 
-    #[error("Invalid conversion for rust type")]
+    #[error("Failed to convert message to Rust type: {0}")]
     InvalidToRust(#[from] WritableResourceError),
 
     #[error(transparent)]

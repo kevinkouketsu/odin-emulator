@@ -2,6 +2,7 @@ pub mod client_id_manager;
 pub mod configuration;
 pub mod game_server_context;
 pub mod handlers;
+pub mod map;
 pub mod message;
 pub mod services;
 pub mod session;
