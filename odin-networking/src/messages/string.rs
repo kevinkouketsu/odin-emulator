@@ -79,11 +79,14 @@ impl<const N: usize> TryFrom<String> for FixedSizeString<N> {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         let len = value.len();
-        match len > N {
-            true => Err(FixedSizeStringError::InvalidSize(value, len)),
-            false => Ok(FixedSizeString {
-                str: CString::new(value).map_err(FixedSizeStringError::NulError)?,
-            }),
+        let cstr = CString::new(value).map_err(FixedSizeStringError::NulError)?;
+        if len >= N {
+            Err(FixedSizeStringError::InvalidSize(
+                cstr.into_string().unwrap(),
+                len,
+            ))
+        } else {
+            Ok(FixedSizeString { str: cstr })
         }
     }
 }
@@ -92,11 +95,14 @@ impl<const N: usize> TryFrom<&str> for FixedSizeString<N> {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let len = value.len();
-        match len > N {
-            true => Err(FixedSizeStringError::InvalidSize(value.to_string(), len)),
-            false => Ok(FixedSizeString {
-                str: CString::new(value).unwrap(),
-            }),
+        let cstr = CString::new(value).map_err(FixedSizeStringError::NulError)?;
+        if len >= N {
+            Err(FixedSizeStringError::InvalidSize(
+                cstr.into_string().unwrap(),
+                len,
+            ))
+        } else {
+            Ok(FixedSizeString { str: cstr })
         }
     }
 }

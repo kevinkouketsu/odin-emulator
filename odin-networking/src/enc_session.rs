@@ -94,12 +94,11 @@ impl EncDecSession {
             pos += 1;
         });
 
-        match (checksum[1].wrapping_sub(checksum[0]) & 255) as u8 != header.checksum {
-            true => Ok(()),
-            false => Err(EncDecError::InvalidChecksum(
-                (checksum[0] & 255) as u8,
-                header.checksum,
-            )),
+        let computed = (checksum[0].wrapping_sub(checksum[1]) & 255) as u8;
+        if computed != header.checksum {
+            Err(EncDecError::InvalidChecksum(computed, header.checksum))
+        } else {
+            Ok(())
         }
     }
 }
