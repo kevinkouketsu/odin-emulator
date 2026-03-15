@@ -13,12 +13,11 @@ use clap::Parser;
 use client_id_manager::ClientIdManager;
 use deku::prelude::*;
 use game_server_context::GameServerContext;
+use map::{EntityId, Map};
 use message::{Message, MessageError};
 use odin_database::DatabaseService;
 use odin_networking::{
-    enc_session::EncDecSession,
-    framed_message::HandshakeState,
-    messages::header::Header,
+    enc_session::EncDecSession, framed_message::HandshakeState, messages::header::Header,
 };
 use std::{net::SocketAddr, rc::Rc};
 use tokio::{
@@ -93,10 +92,9 @@ async fn main() {
 
     let connection = DatabaseService::new(&database_url).await.unwrap();
     let account_repository = connection.account_repository();
-    let mut context = GameServerContext::new(
-        ClientIdManager::with_maximum(750),
-        account_repository,
-    );
+    let mut context =
+        GameServerContext::new(ClientIdManager::with_maximum(750), account_repository);
+    let mut map = Map::new();
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<GameEvent>();
     let listener = TcpListener::bind(cli.addr).await.unwrap();
@@ -152,7 +150,7 @@ async fn main() {
                 let encdec = EncDecSession::new(client_id as u16, keytable.clone());
                 context.add_session(
                     client_id,
-                    UserSession::new(writer_tx.clone(), encdec),
+                    UserSession::new(client_id, writer_tx.clone(), encdec),
                 );
 
                 log::info!("Player {} connected. ClientId: {}", addr, client_id);
@@ -202,10 +200,13 @@ async fn main() {
                         };
 
                         log::info!("Received packet {:?} from {}", message, client_id);
-                        session.handle(&context, message).await;
+                        session.handle(&context, &mut map, message).await;
                         context.add_session(client_id, session);
                     }
                     GameEvent::Disconnected { client_id } => {
+                        if let Ok(_result) = map.remove(EntityId::Player(client_id)) {
+                            // TODO: Send remove packets to _result.spectators
+                        }
                         if context.disconnect(client_id).is_err() {
                             log::error!(
                                 "Received a disconnect event from unknown ClientId: {}",

@@ -1,13 +1,14 @@
-use bytes::Bytes;
 use crate::{
     game_server_context::GameServerContext,
+    map::Map,
     message::Message,
     session::{SessionError, SessionTrait},
 };
-use odin_models::account_charlist::AccountCharlist;
+use bytes::Bytes;
+use odin_models::{account_charlist::AccountCharlist, character::Character};
 use odin_networking::{
-    enc_session::{EncDecError, EncDecSession},
     WritableResource,
+    enc_session::{EncDecError, EncDecSession},
 };
 use odin_repositories::account_repository::AccountRepository;
 use tokio::sync::mpsc;
@@ -20,19 +21,25 @@ pub enum Session {
         account_charlist: AccountCharlist,
         token: bool,
     },
+    World {
+        character: Character,
+    },
 }
 
 pub struct UserSession {
+    client_id: usize,
     writer: mpsc::UnboundedSender<Bytes>,
     encdec_session: EncDecSession,
     session: Session,
 }
 impl UserSession {
     pub fn new(
+        client_id: usize,
         writer: mpsc::UnboundedSender<Bytes>,
         encdec_session: EncDecSession,
     ) -> Self {
         Self {
+            client_id,
             writer,
             encdec_session,
             session: Session::default(),
@@ -42,6 +49,7 @@ impl UserSession {
     pub async fn handle<A: AccountRepository>(
         &mut self,
         context: &GameServerContext<A>,
+        map: &mut Map,
         message: Message,
     ) {
         let sender = self.get_sender();
@@ -89,8 +97,19 @@ impl UserSession {
                             Err(e) => log::warn!("DeleteCharacter failed: {e:?}"),
                         }
                     }
+                    Message::EnterWorld(msg) if *token => {
+                        match msg.handle(account_id, self.client_id, repo, map).await {
+                            Ok(character) => {
+                                self.session = Session::World { character };
+                            }
+                            Err(e) => log::warn!("EnterWorld failed: {e:?}"),
+                        }
+                    }
                     message => log::error!("Got a message in incorrect state: {:?}", message),
                 }
+            }
+            Session::World { character: _ } => {
+                log::error!("Unhandled message in World state: {:?}", message);
             }
         }
     }
@@ -115,7 +134,9 @@ pub struct SenderSession {
 impl SessionTrait for SenderSession {
     fn send<R: WritableResource>(&self, message: R) -> Result<(), SessionError> {
         let bytes = self.encdec_session.encrypt::<R>(message)?;
-        self.writer.send(bytes).map_err(|_| SessionError::Disconnected)?;
+        self.writer
+            .send(bytes)
+            .map_err(|_| SessionError::Disconnected)?;
         Ok(())
     }
 }
