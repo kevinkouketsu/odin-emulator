@@ -16,4 +16,7 @@ pub enum SessionError {
 
     #[error(transparent)]
     WritableResourceError(#[from] WritableResourceError),
+
+    #[error("Client disconnected")]
+    Disconnected,
 }

@@ -8,22 +8,23 @@ pub mod services;
 pub mod session;
 pub mod user_session;
 
+use bytes::Bytes;
 use clap::Parser;
 use client_id_manager::ClientIdManager;
 use deku::prelude::*;
-use futures::{channel::mpsc, SinkExt, StreamExt};
 use game_server_context::GameServerContext;
 use message::{Message, MessageError};
-use message_io::{
-    network::Transport,
-    node::{self, NodeHandler, NodeListener, StoredNetEvent, StoredNodeEvent},
-};
 use odin_database::DatabaseService;
-use odin_networking::{enc_session::EncDecSession, messages::header::Header};
-use std::{
-    io,
-    net::{SocketAddr, ToSocketAddrs},
-    rc::Rc,
+use odin_networking::{
+    enc_session::EncDecSession,
+    framed_message::HandshakeState,
+    messages::header::Header,
+};
+use std::{net::SocketAddr, rc::Rc};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpListener,
+    sync::mpsc,
 };
 use user_session::UserSession;
 
@@ -62,6 +63,20 @@ const KEYTABLE: [u8; 512] = [
     0x1A, 0x53, 0x77, 0x35, 0x78, 0x7B, 0x1D, 0x04, 0x20, 0x03, 0x43, 0x27, 0x1D, 0x47, 0x31, 0x29,
 ];
 
+pub enum GameEvent {
+    Connected {
+        client_id: usize,
+        writer: mpsc::UnboundedSender<Bytes>,
+    },
+    Message {
+        client_id: usize,
+        data: Vec<u8>,
+    },
+    Disconnected {
+        client_id: usize,
+    },
+}
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -75,157 +90,134 @@ async fn main() {
     dotenvy::dotenv().unwrap();
 
     let database_url = dotenvy::var("DATABASE_URL").expect("Database URL is mandatory");
-    let gameserver = GameServer::new(cli.addr, database_url).unwrap();
-    gameserver.run().await;
-}
 
-pub struct GameServer {
-    node_handler: NodeHandler<GameServerSignals>,
-    node_listener: NodeListener<GameServerSignals>,
-    database_url: String,
-}
-impl GameServer {
-    pub fn new<T: ToSocketAddrs>(addr: T, database_url: String) -> io::Result<Self> {
-        let (node_handler, node_listener) = node::split::<GameServerSignals>();
-        node_handler.network().listen(Transport::Tcp, addr)?;
+    let connection = DatabaseService::new(&database_url).await.unwrap();
+    let account_repository = connection.account_repository();
+    let mut context = GameServerContext::new(
+        ClientIdManager::with_maximum(750),
+        account_repository,
+    );
 
-        Ok(Self {
-            node_handler,
-            node_listener,
-            database_url,
-        })
-    }
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel::<GameEvent>();
+    let listener = TcpListener::bind(cli.addr).await.unwrap();
+    log::info!("Listening on {}", cli.addr);
 
-    pub async fn run(self) {
-        let connection = DatabaseService::new(&self.database_url).await.unwrap();
-        let account_repository = connection.account_repository();
-        let mut context = GameServerContext::new(
-            self.node_handler.clone(),
-            ClientIdManager::with_maximum(750),
-            account_repository,
-        );
+    let keytable = Rc::new(KEYTABLE);
 
-        let (mut tx, mut rx) = mpsc::unbounded::<StoredNodeEvent<GameServerSignals>>();
-        let (_task, mut enqueue) = self.node_listener.enqueue();
-        let _handle = tokio::spawn(async move {
-            while !tx.is_closed() {
-                let event = enqueue.receive();
-                tx.send(event).await.unwrap();
+    loop {
+        tokio::select! {
+            Ok((stream, addr)) = listener.accept() => {
+                let client_id = match context.get_client_id_manager_mut().add() {
+                    Some(id) => id,
+                    None => {
+                        log::error!("Could not find a client id");
+                        continue;
+                    }
+                };
+
+                let (writer_tx, mut writer_rx) = mpsc::unbounded_channel::<Bytes>();
+                let event_tx_clone = event_tx.clone();
+                let (mut read_half, mut write_half) = stream.into_split();
+
+                tokio::spawn(async move {
+                    while let Some(data) = writer_rx.recv().await {
+                        if write_half.write_all(&data).await.is_err() {
+                            break;
+                        }
+                    }
+                });
+
+                tokio::spawn(async move {
+                    let mut handshake = HandshakeState::default();
+                    let mut buf = [0u8; 4096];
+
+                    loop {
+                        match read_half.read(&mut buf).await {
+                            Ok(0) | Err(_) => {
+                                let _ = event_tx_clone.send(GameEvent::Disconnected { client_id });
+                                break;
+                            }
+                            Ok(n) => {
+                                handshake.update(&buf[..n]);
+                                while let Some(msg) = handshake.next_message() {
+                                    if event_tx_clone.send(GameEvent::Message { client_id, data: msg }).is_err() {
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                let encdec = EncDecSession::new(client_id as u16, keytable.clone());
+                context.add_session(
+                    client_id,
+                    UserSession::new(writer_tx.clone(), encdec),
+                );
+
+                log::info!("Player {} connected. ClientId: {}", addr, client_id);
             }
 
-            panic!("Main loop ended, wtf");
-        });
+            Some(event) = event_rx.recv() => {
+                match event {
+                    GameEvent::Connected { .. } => {}
+                    GameEvent::Message { client_id, mut data } => {
+                        let Some(mut session) = context.take_session(client_id) else {
+                            log::error!("Received a message from unknown client {}", client_id);
+                            continue;
+                        };
 
-        while let Some(event) = rx.next().await {
-            match event {
-                StoredNodeEvent::Network(network) => match network {
-                    StoredNetEvent::Connected(_, _) => unreachable!(),
-                    StoredNetEvent::Accepted(endpoint, _resource_id) => {
-                        let resource_id = endpoint.resource_id();
-                        let client_id = match context.get_client_id_manager_mut().add() {
-                            Some(client_id) => client_id,
-                            None => {
-                                context.get_handler().network().remove(resource_id);
+                        if let Err(e) = session.decrypt(&mut data) {
+                            log::error!("Fail to decrypt packet: {:?}", e);
+                            context.add_session(client_id, session);
+                            continue;
+                        }
 
-                                log::error!("Could not find a client id");
-                                return;
+                        let (rest, header) = Header::from_bytes((&data, 0))
+                            .expect("Could not parse header this is very strange");
+
+                        let message = match Message::try_from((rest, header)) {
+                            Ok(message) => message,
+                            Err(MessageError::NotImplemented(header)) => {
+                                log::error!(
+                                    "Received a packet that is not implemented yet: {:?}",
+                                    header
+                                );
+                                context.add_session(client_id, session);
+                                continue;
+                            }
+                            Err(MessageError::NotRecognized(header)) => {
+                                log::error!(
+                                    "Received a packet that has not been identified: {:?}",
+                                    header
+                                );
+                                context.add_session(client_id, session);
+                                continue;
+                            }
+                            Err(err) => {
+                                log::error!("Invalid packet received: {:?}", err);
+                                context.add_session(client_id, session);
+                                continue;
                             }
                         };
 
-                        let keytable = Rc::new(KEYTABLE);
-                        context.add_session(
-                            client_id,
-                            UserSession::new(
-                                self.node_handler.clone(),
-                                endpoint,
-                                EncDecSession::new(client_id as u16, keytable.clone()),
-                            ),
-                        );
-
-                        log::info!(
-                            "Player {:?} connected. ClientId: {}. Resource Id: {}",
-                            endpoint,
-                            client_id,
-                            resource_id
-                        );
+                        log::info!("Received packet {:?} from {}", message, client_id);
+                        session.handle(&context, message).await;
+                        context.add_session(client_id, session);
                     }
-                    StoredNetEvent::Message(endpoint, message) => {
-                        let client_id = context
-                            .get_client_id_by_resource_id(endpoint.resource_id())
-                            .await
-                            .expect("Could not find a clientid for a specific resource id");
-
-                        let Some(session) = context.get_session_mut_by_client_id(client_id) else {
-                            log::error!("Received a message from unknown endpoint");
-                            return;
-                        };
-
-                        let mut session = session.write().await;
-                        session.feed_with_message(&message);
-
-                        while let Some(mut message) = session.next_message() {
-                            if let Err(e) = session.decrypt(&mut message) {
-                                log::error!("Fail to decrypt packet: {:?}", e);
-
-                                continue;
-                            };
-
-                            let (rest, header) = Header::from_bytes((&message, 0))
-                                .expect("Could not parse header this is very strange");
-
-                            let message = match Message::try_from((rest, header)) {
-                                Ok(message) => message,
-                                Err(MessageError::NotImplemented(header)) => {
-                                    log::error!(
-                                        "Received a packet that is not implemented yet: {:?}",
-                                        header
-                                    );
-
-                                    continue;
-                                }
-                                Err(MessageError::NotRecognized(header)) => {
-                                    log::error!(
-                                        "Received a packet that has not been identified: {:?}",
-                                        header
-                                    );
-
-                                    continue;
-                                }
-                                Err(err) => {
-                                    log::error!("Invalid packet received: {:?}", err);
-                                    continue;
-                                }
-                            };
-
-                            log::info!("Received packet {:?} from {}", message, client_id);
-                            session.handle(&context, message).await;
-                        }
-                    }
-                    StoredNetEvent::Disconnected(endpoint) => {
-                        let client_id = context
-                            .get_client_id_by_resource_id(endpoint.resource_id())
-                            .await
-                            .expect("Could not find a clientid for a specific resource id");
-
-                        if context
-                            .get_client_id_manager_mut()
-                            .remove(client_id)
-                            .is_err()
-                        {
+                    GameEvent::Disconnected { client_id } => {
+                        context.remove_session(client_id);
+                        if context.get_client_id_manager_mut().remove(client_id).is_err() {
                             log::error!(
-                                "Received a disconnect event from a unknown resource: {:?}. Resource Id: {}. ClientId: {}",
-                                endpoint,
-                                endpoint.resource_id(), client_id
+                                "Received a disconnect event from unknown ClientId: {}",
+                                client_id
                             );
+                        } else {
+                            log::info!("Player disconnected. ClientId: {}", client_id);
                         }
                     }
-                },
-                StoredNodeEvent::Signal(_signal) => {}
-            };
+                }
+            }
         }
-        panic!("Main loop ended")
     }
 }
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum GameServerSignals {}

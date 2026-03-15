@@ -39,10 +39,7 @@ impl HandshakeState {
     pub fn update(&mut self, data: &[u8]) {
         match self {
             HandshakeState::Handshaking => {
-                for data in data.windows(4).filter_map(|val| match val.try_into() {
-                    Ok(value) => Some(value),
-                    Err(_) => None,
-                }) {
+                for data in data.windows(4).filter_map(|val| val.try_into().ok()) {
                     let value: [u8; 4] = data;
                     if u32::from_le_bytes(value) == HANDSHAKE_VALUE {
                         *self = HandshakeState::Done(Default::default())

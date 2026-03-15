@@ -1,20 +1,16 @@
+use bytes::Bytes;
 use crate::{
     game_server_context::GameServerContext,
     message::Message,
     session::{SessionError, SessionTrait},
-    GameServerSignals,
-};
-use message_io::{
-    network::{Endpoint, ResourceId},
-    node::NodeHandler,
 };
 use odin_models::account_charlist::AccountCharlist;
 use odin_networking::{
     enc_session::{EncDecError, EncDecSession},
-    framed_message::HandshakeState,
     WritableResource,
 };
 use odin_repositories::account_repository::AccountRepository;
+use tokio::sync::mpsc;
 
 #[derive(Default)]
 pub enum Session {
@@ -27,23 +23,18 @@ pub enum Session {
 }
 
 pub struct UserSession {
-    handler: NodeHandler<GameServerSignals>,
-    endpoint: Endpoint,
+    writer: mpsc::UnboundedSender<Bytes>,
     encdec_session: EncDecSession,
-    framed_message: HandshakeState,
     session: Session,
 }
 impl UserSession {
     pub fn new(
-        handler: NodeHandler<GameServerSignals>,
-        endpoint: Endpoint,
+        writer: mpsc::UnboundedSender<Bytes>,
         encdec_session: EncDecSession,
     ) -> Self {
         Self {
-            handler,
-            endpoint,
+            writer,
             encdec_session,
-            framed_message: Default::default(),
             session: Session::default(),
         }
     }
@@ -115,43 +106,27 @@ impl UserSession {
         }
     }
 
-    pub fn get_resource_id(&self) -> ResourceId {
-        self.endpoint.resource_id()
-    }
-
-    pub fn feed_with_message(&mut self, data: &[u8]) {
-        self.framed_message.update(data);
-    }
-
-    pub fn next_message(&mut self) -> Option<Vec<u8>> {
-        self.framed_message.next_message()
-    }
-
     pub fn decrypt(&self, data: &mut [u8]) -> Result<(), EncDecError> {
         self.encdec_session.decrypt(data)?;
-
         Ok(())
     }
 
     fn get_sender(&self) -> SenderSession {
         SenderSession {
             encdec_session: self.encdec_session.clone(),
-            endpoint: self.endpoint,
-            handler: self.handler.clone(),
+            writer: self.writer.clone(),
         }
     }
 }
 
 pub struct SenderSession {
-    handler: NodeHandler<GameServerSignals>,
     encdec_session: EncDecSession,
-    endpoint: Endpoint,
+    writer: mpsc::UnboundedSender<Bytes>,
 }
 impl SessionTrait for SenderSession {
     fn send<R: WritableResource>(&self, message: R) -> Result<(), SessionError> {
         let bytes = self.encdec_session.encrypt::<R>(message)?;
-
-        self.handler.network().send(self.endpoint, &bytes);
+        self.writer.send(bytes).map_err(|_| SessionError::Disconnected)?;
         Ok(())
     }
 }
