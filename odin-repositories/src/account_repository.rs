@@ -1,61 +1,64 @@
-use futures::future::BoxFuture;
 use odin_models::{
     account_charlist::{AccountCharlist, CharacterInfo},
     character::{Character, Class},
     nickname::Nickname,
     uuid::Uuid,
 };
+use std::future::Future;
 use thiserror::Error;
 
 pub trait AccountRepository: Clone + 'static {
-    fn fetch_account<'a>(
-        &'a self,
-        username: &'a str,
-    ) -> BoxFuture<'a, Result<Option<AccountCharlist>, AccountRepositoryError>>;
+    fn fetch_account(
+        &self,
+        username: &str,
+    ) -> impl Future<Output = Result<Option<AccountCharlist>, AccountRepositoryError>> + Send;
 
     fn fetch_charlist(
         &self,
         account_id: Uuid,
-    ) -> BoxFuture<Result<Vec<(usize, CharacterInfo)>, AccountRepositoryError>>;
+    ) -> impl Future<Output = Result<Vec<(usize, CharacterInfo)>, AccountRepositoryError>> + Send;
 
     fn fetch_character(
         &self,
         account_id: Uuid,
         slot: usize,
-    ) -> BoxFuture<Result<Option<Character>, AccountRepositoryError>>;
+    ) -> impl Future<Output = Result<Option<Character>, AccountRepositoryError>> + Send;
 
     fn update_token(
         &self,
         id: Uuid,
         new_token: Option<String>,
-    ) -> BoxFuture<Result<(), AccountRepositoryError>>;
+    ) -> impl Future<Output = Result<(), AccountRepositoryError>> + Send;
 
-    fn get_token(&self, id: Uuid) -> BoxFuture<Result<Option<String>, AccountRepositoryError>>;
+    fn get_token(
+        &self,
+        id: Uuid,
+    ) -> impl Future<Output = Result<Option<String>, AccountRepositoryError>> + Send;
 
-    fn create_character<'a>(
-        &'a self,
+    fn create_character(
+        &self,
         account_id: Uuid,
         slot: u32,
-        name: &'a Nickname,
+        name: &Nickname,
         class: Class,
-    ) -> BoxFuture<'a, Result<Uuid, AccountRepositoryError>>;
+    ) -> impl Future<Output = Result<Uuid, AccountRepositoryError>> + Send;
 
-    fn name_exists<'a>(
-        &'a self,
-        name: &'a Nickname,
-    ) -> BoxFuture<'a, Result<bool, AccountRepositoryError>>;
+    fn name_exists(
+        &self,
+        name: &Nickname,
+    ) -> impl Future<Output = Result<bool, AccountRepositoryError>> + Send;
 
     fn delete_character(
         &self,
         account_id: Uuid,
         slot: usize,
-    ) -> BoxFuture<Result<(), AccountRepositoryError>>;
+    ) -> impl Future<Output = Result<(), AccountRepositoryError>> + Send;
 
-    fn check_password<'a>(
-        &'a self,
+    fn check_password(
+        &self,
         account_id: Uuid,
-        password: &'a str,
-    ) -> BoxFuture<'a, Result<bool, AccountRepositoryError>>;
+        password: &str,
+    ) -> impl Future<Output = Result<bool, AccountRepositoryError>> + Send;
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]

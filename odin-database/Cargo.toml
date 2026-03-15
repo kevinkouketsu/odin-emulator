@@ -10,7 +10,6 @@ sqlite = ["sea-orm/sqlx-sqlite", "migration/sqlite"]
 
 [dependencies]
 chrono = "0.4.38"
-futures = "0.3.28"
 odin-models = { path = "../odin-models" }
 odin-repositories = { path = "../odin-repositories" }
 entity = { path = "./entity" }
