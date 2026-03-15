@@ -23,8 +23,8 @@ pub struct DeleteCharacter {
 impl DeleteCharacter {
     pub async fn handle<S: SessionTrait, A: AccountRepository>(
         &self,
-        account_id: Uuid,
         session: &S,
+        account_id: Uuid,
         account_repository: A,
     ) -> Result<Vec<(usize, CharacterInfo)>, DeleteCharacterError> {
         match self.handle_impl(account_id, account_repository).await {

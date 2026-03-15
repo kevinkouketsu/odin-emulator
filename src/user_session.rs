@@ -44,65 +44,54 @@ impl UserSession {
         context: &GameServerContext<A>,
         message: Message,
     ) {
-        let session = self.get_sender();
+        let sender = self.get_sender();
+        let repo = context.account_repository.clone();
+
         match &mut self.session {
             Session::LoggingIn => {
-                if let Message::Login(login_message) = message {
-                    if let Ok(account_charlist) = login_message
-                        .handle(&session, context, context.account_repository.clone())
-                        .await
-                    {
+                let Message::Login(msg) = message else {
+                    log::error!("Got a message in incorrect state: {:?}", message);
+                    return;
+                };
+
+                match msg.handle(&sender, context, repo).await {
+                    Ok(account_charlist) => {
                         self.session = Session::Charlist {
                             account_charlist,
                             token: false,
-                        }
+                        };
                     }
+                    Err(e) => log::warn!("Login failed: {e:?}"),
                 }
             }
             Session::Charlist {
                 account_charlist,
                 token,
-            } => match message {
-                Message::Token(token_message) => {
-                    let r = token_message
-                        .handle(
-                            &session,
-                            account_charlist.identifier,
-                            *token,
-                            context.account_repository.clone(),
-                        )
-                        .await;
+            } => {
+                let account_id = account_charlist.identifier;
 
-                    if r.is_ok() {
-                        *token = true;
+                match message {
+                    Message::Token(msg) => {
+                        match msg.handle(&sender, account_id, *token, repo).await {
+                            Ok(()) => *token = true,
+                            Err(e) => log::warn!("Token failed: {e:?}"),
+                        }
                     }
-                }
-                Message::CreateCharacter(message) if *token => {
-                    if let Ok(new_charlist) = message
-                        .handle(
-                            &session,
-                            account_charlist.identifier,
-                            context.account_repository.clone(),
-                        )
-                        .await
-                    {
-                        account_charlist.charlist = new_charlist;
+                    Message::CreateCharacter(msg) if *token => {
+                        match msg.handle(&sender, account_id, repo).await {
+                            Ok(new_charlist) => account_charlist.charlist = new_charlist,
+                            Err(e) => log::warn!("CreateCharacter failed: {e:?}"),
+                        }
                     }
-                }
-                Message::DeleteCharacter(message) if *token => {
-                    if let Ok(new_charlist) = message
-                        .handle(
-                            account_charlist.identifier,
-                            &session,
-                            context.account_repository.clone(),
-                        )
-                        .await
-                    {
-                        account_charlist.charlist = new_charlist;
+                    Message::DeleteCharacter(msg) if *token => {
+                        match msg.handle(&sender, account_id, repo).await {
+                            Ok(new_charlist) => account_charlist.charlist = new_charlist,
+                            Err(e) => log::warn!("DeleteCharacter failed: {e:?}"),
+                        }
                     }
+                    message => log::error!("Got a message in incorrect state: {:?}", message),
                 }
-                message => log::error!("Got a message in incorrect state: {:?}", message),
-            },
+            }
         }
     }
 
