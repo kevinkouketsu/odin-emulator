@@ -107,7 +107,7 @@ async fn main() {
     loop {
         tokio::select! {
             Ok((stream, addr)) = listener.accept() => {
-                let client_id = match context.get_client_id_manager_mut().add() {
+                let client_id = match context.allocate_client_id() {
                     Some(id) => id,
                     None => {
                         log::error!("Could not find a client id");
@@ -206,8 +206,7 @@ async fn main() {
                         context.add_session(client_id, session);
                     }
                     GameEvent::Disconnected { client_id } => {
-                        context.remove_session(client_id);
-                        if context.get_client_id_manager_mut().remove(client_id).is_err() {
+                        if context.disconnect(client_id).is_err() {
                             log::error!(
                                 "Received a disconnect event from unknown ClientId: {}",
                                 client_id

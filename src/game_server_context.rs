@@ -1,5 +1,5 @@
 use crate::{
-    client_id_manager::ClientIdManager,
+    client_id_manager::{ClientIdManager, ClientIdManagerError},
     configuration::{CliVer, Configuration, ServerState},
     user_session::UserSession,
 };
@@ -28,24 +28,25 @@ where
         }
     }
 
-    pub fn get_client_id_manager_mut(&mut self) -> &mut ClientIdManager {
-        &mut self.client_id_manager
+    pub fn allocate_client_id(&mut self) -> Option<usize> {
+        self.client_id_manager.add()
+    }
+
+    pub fn release_client_id(&mut self, client_id: usize) -> Result<(), ClientIdManagerError> {
+        self.client_id_manager.remove(client_id)
     }
 
     pub fn add_session(&mut self, client_id: usize, session: UserSession) {
         self.sessions.insert(client_id, session);
     }
 
-    pub fn remove_session(&mut self, client_id: usize) {
-        self.sessions.remove(&client_id);
-    }
-
-    pub fn get_sessions(&self) -> &HashMap<usize, UserSession> {
-        &self.sessions
-    }
-
     pub fn take_session(&mut self, client_id: usize) -> Option<UserSession> {
         self.sessions.remove(&client_id)
+    }
+
+    pub fn disconnect(&mut self, client_id: usize) -> Result<(), ClientIdManagerError> {
+        self.sessions.remove(&client_id);
+        self.client_id_manager.remove(client_id)
     }
 }
 impl<A> Configuration for GameServerContext<A>
