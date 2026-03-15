@@ -64,10 +64,7 @@ mod tests {
         let mut manager = ClientIdManager::with_maximum(2);
 
         manager.add();
-        assert_eq!(
-            manager.remove(2),
-            Err(ClientIdManagerError::NotFound(2))
-        );
+        assert_eq!(manager.remove(2), Err(ClientIdManagerError::NotFound(2)));
     }
 
     #[test]

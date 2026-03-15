@@ -2,7 +2,7 @@ use entity::{
     character::{Class, Evolution},
     item::ItemCategory,
 };
-use sea_orm::{prelude::*, ActiveEnum, Set};
+use sea_orm::{ActiveEnum, Set, prelude::*};
 use sea_orm_migration::prelude::{ColumnDef, *};
 
 #[derive(DeriveMigrationName)]

@@ -1,17 +1,17 @@
 use crate::{
+    WritableResource, WritableResourceError,
     messages::{
+        ServerMessage,
         common::{ItemRaw, ScoreRaw},
         server::MessageSignal,
         string::FixedSizeString,
-        ServerMessage,
     },
-    WritableResource, WritableResourceError,
 };
 use deku::prelude::*;
 use odin_macros::MessageSignalDerive;
 use odin_models::{
-    account_charlist::CharacterInfo, item::Item, position::Position, status::Score,
-    storage::Storage, MAX_EQUIPS, MAX_STORAGE_ITEMS,
+    MAX_EQUIPS, MAX_STORAGE_ITEMS, account_charlist::CharacterInfo, item::Item, position::Position,
+    status::Score, storage::Storage,
 };
 use std::array;
 

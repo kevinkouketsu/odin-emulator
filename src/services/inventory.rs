@@ -1,4 +1,4 @@
-use odin_models::{item::Item, MAX_INVENTORY_VISIBLE};
+use odin_models::{MAX_INVENTORY_VISIBLE, item::Item};
 
 pub struct Inventory {
     items: [Option<Item>; MAX_INVENTORY_VISIBLE],

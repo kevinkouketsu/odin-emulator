@@ -1,5 +1,5 @@
 use deku::prelude::*;
-use odin_networking::{enc_session::EncDecError, WritableResource, WritableResourceError};
+use odin_networking::{WritableResource, WritableResourceError, enc_session::EncDecError};
 use thiserror::Error;
 
 pub trait SessionTrait {

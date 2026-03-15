@@ -1,11 +1,11 @@
 use crate::session::{SessionError, SessionTrait};
 use odin_models::uuid::Uuid;
 use odin_networking::{
+    WritableResourceError,
     messages::{
         client::numeric_token::NumericTokenRaw,
         server::numeric_token::{CorrectNumericToken, IncorrectNumericToken},
     },
-    WritableResourceError,
 };
 use odin_repositories::account_repository::{AccountRepository, AccountRepositoryError};
 use thiserror::Error;
@@ -182,17 +182,19 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            assert!(NumericToken {
-                token: original_token.clone(),
-                changing: false,
-            }
-            .handle_impl(
-                account.identifier,
-                false,
-                repository.account_repository().clone()
-            )
-            .await
-            .is_ok());
+            assert!(
+                NumericToken {
+                    token: original_token.clone(),
+                    changing: false,
+                }
+                .handle_impl(
+                    account.identifier,
+                    false,
+                    repository.account_repository().clone()
+                )
+                .await
+                .is_ok()
+            );
 
             let token_after = repository
                 .account_repository()

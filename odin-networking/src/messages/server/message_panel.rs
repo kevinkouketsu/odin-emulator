@@ -1,6 +1,6 @@
 use crate::{
-    messages::{string::FixedSizeString, ServerMessage},
     WritableResource, WritableResourceError,
+    messages::{ServerMessage, string::FixedSizeString},
 };
 use deku::prelude::*;
 

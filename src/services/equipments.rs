@@ -1,4 +1,4 @@
-use odin_models::{item::Item, EquipmentSlot, MAX_EQUIPS};
+use odin_models::{EquipmentSlot, MAX_EQUIPS, item::Item};
 
 #[derive(Debug)]
 pub struct Equipments {

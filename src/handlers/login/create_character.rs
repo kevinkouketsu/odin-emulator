@@ -1,12 +1,13 @@
 use crate::session::{SessionError, SessionTrait};
 use odin_models::{
+    MAX_CHARACTERS,
     account_charlist::CharacterInfo,
     character::Class,
     nickname::{InvalidNicknameError, Nickname},
     uuid::Uuid,
-    MAX_CHARACTERS,
 };
 use odin_networking::{
+    WritableResourceError,
     messages::{
         client::create_character::CreateCharacterRaw,
         server::{
@@ -14,7 +15,6 @@ use odin_networking::{
             message_panel::MessagePanel,
         },
     },
-    WritableResourceError,
 };
 use odin_repositories::account_repository::{AccountRepository, AccountRepositoryError};
 use thiserror::Error;

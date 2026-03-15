@@ -1,4 +1,4 @@
-use crate::{messages::header::Header, WritableResource, WritableResourceError};
+use crate::{WritableResource, WritableResourceError, messages::header::Header};
 use bytes::Bytes;
 use deku::prelude::*;
 use rand::Rng;
@@ -118,7 +118,7 @@ pub enum EncDecError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{messages::ServerMessage, WritableResourceError};
+    use crate::{WritableResourceError, messages::ServerMessage};
 
     #[derive(Debug, Clone, PartialEq, Eq, DekuWrite, DekuRead)]
     struct PayloadTest {

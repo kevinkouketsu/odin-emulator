@@ -1,8 +1,8 @@
 use deku::prelude::*;
 use odin_models::{
+    MAX_ITEM_EFFECT,
     item::{Item, ItemBonusEffect},
     status::Score,
-    MAX_ITEM_EFFECT,
 };
 use std::array;
 

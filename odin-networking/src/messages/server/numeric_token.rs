@@ -1,7 +1,7 @@
 use super::MessageSignal;
 use crate::{
-    messages::{client::numeric_token::NumericTokenRaw, ServerMessage},
     WritableResource, WritableResourceError,
+    messages::{ServerMessage, client::numeric_token::NumericTokenRaw},
 };
 use odin_macros::MessageSignalDerive;
 

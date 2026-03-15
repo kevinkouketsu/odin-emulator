@@ -3,14 +3,14 @@ use crate::{
     session::{SessionError, SessionTrait},
 };
 use odin_models::{
-    account_charlist::CharacterInfo, character::Evolution, uuid::Uuid, EquipmentSlot,
+    EquipmentSlot, account_charlist::CharacterInfo, character::Evolution, uuid::Uuid,
 };
 use odin_networking::{
+    WritableResourceError,
     messages::{
         client::delete_character::DeleteCharacterRaw,
         server::{charlist::UpdateCharlist, message_panel::MessagePanel},
     },
-    WritableResourceError,
 };
 use odin_repositories::account_repository::{AccountRepository, AccountRepositoryError};
 use thiserror::Error;
@@ -202,12 +202,14 @@ mod tests {
         .unwrap();
 
         assert!(charlist.is_empty());
-        assert!(repository
-            .account_repository()
-            .fetch_charlist(account_id)
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(
+            repository
+                .account_repository()
+                .fetch_charlist(account_id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]
@@ -305,12 +307,14 @@ mod tests {
         .unwrap();
 
         assert!(charlist.is_empty());
-        assert!(repository
-            .account_repository()
-            .fetch_charlist(account_id)
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(
+            repository
+                .account_repository()
+                .fetch_charlist(account_id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]

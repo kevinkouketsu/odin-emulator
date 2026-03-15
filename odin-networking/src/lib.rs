@@ -3,7 +3,7 @@ pub mod framed_message;
 pub mod messages;
 
 use deku::prelude::*;
-use messages::{string::FixedSizeStringError, ServerMessage};
+use messages::{ServerMessage, string::FixedSizeStringError};
 use std::ffi::IntoStringError;
 use thiserror::Error;
 

@@ -6,7 +6,7 @@ extern crate proc_macro;
 // use syn::{parse_macro_input, Data, DataStruct, DeriveInput, Fields, Ident};
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, spanned::Spanned, Data, DeriveInput, Expr, Lit, Meta, Path};
+use syn::{Data, DeriveInput, Expr, Lit, Meta, Path, parse_macro_input, spanned::Spanned};
 
 #[proc_macro_derive(MessageSignalDerive, attributes(identifier))]
 pub fn writable_resource_derive(input: TokenStream) -> TokenStream {

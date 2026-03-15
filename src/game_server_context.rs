@@ -16,10 +16,7 @@ impl<A> GameServerContext<A>
 where
     A: AccountRepository,
 {
-    pub fn new(
-        client_id_manager: ClientIdManager,
-        account_repository: A,
-    ) -> Self {
+    pub fn new(client_id_manager: ClientIdManager, account_repository: A) -> Self {
         Self {
             sessions: Default::default(),
             client_id_manager,

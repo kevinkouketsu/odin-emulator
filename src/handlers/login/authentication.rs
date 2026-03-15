@@ -5,6 +5,7 @@ use crate::{
 use chrono::{Local, NaiveDateTime};
 use odin_models::{account::BanType, account_charlist::AccountCharlist, storage::Storage};
 use odin_networking::{
+    WritableResourceError,
     messages::{
         client::login::LoginMessageRaw,
         server::{
@@ -12,7 +13,6 @@ use odin_networking::{
             message_panel::MessagePanel,
         },
     },
-    WritableResourceError,
 };
 use odin_repositories::account_repository::{AccountRepository, AccountRepositoryError};
 use thiserror::Error;
@@ -389,8 +389,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn it_can_login_when_server_is_closed_for_maintenance_and_the_access_is_gamemaster_or_admin(
-    ) {
+    async fn it_can_login_when_server_is_closed_for_maintenance_and_the_access_is_gamemaster_or_admin()
+     {
         let account_repository = TestAccountRepository::new().await;
         account_repository
             .add_account(

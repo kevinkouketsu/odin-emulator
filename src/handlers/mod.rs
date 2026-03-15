@@ -8,9 +8,9 @@ pub mod tests {
     };
     use deku::prelude::*;
     use odin_database::{
-        entity::item::ItemCategory,
-        sea_orm::{prelude::*, ActiveValue::NotSet, Database, Set},
         DatabaseService,
+        entity::item::ItemCategory,
+        sea_orm::{ActiveValue::NotSet, Database, Set, prelude::*},
     };
     use odin_models::{
         account_charlist::AccountCharlist, character::Character, item::Item, uuid::Uuid,

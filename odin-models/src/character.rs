@@ -1,4 +1,4 @@
-use crate::{item::Item, position::Position, status::Score, EquipmentSlot};
+use crate::{EquipmentSlot, item::Item, position::Position, status::Score};
 use thiserror::Error;
 use uuid::Uuid;
 

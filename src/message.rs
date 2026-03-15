@@ -8,15 +8,15 @@ use crate::handlers::login::{
 use deku::prelude::*;
 use odin_macros::HandlerDerive;
 use odin_networking::{
+    WritableResourceError,
     messages::{
+        ClientMessage,
         client::{
             create_character::CreateCharacterRaw, delete_character::DeleteCharacterRaw,
             enter_world::EnterWorldRaw, login::LoginMessageRaw, numeric_token::NumericTokenRaw,
         },
         header::Header,
-        ClientMessage,
     },
-    WritableResourceError,
 };
 use thiserror::Error;
 
