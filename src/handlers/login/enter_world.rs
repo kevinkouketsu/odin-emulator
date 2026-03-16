@@ -3,6 +3,7 @@ use crate::packets::ToCharacterLogin;
 use crate::session::{PacketSender, SessionError};
 use crate::world::{Mob, Player, World};
 use crate::{map::MapError, packets::ToCreateMob};
+use odin_models::status::Score;
 use odin_models::uuid::Uuid;
 use odin_networking::{WritableResourceError, messages::client::enter_world::EnterWorldRaw};
 use odin_repositories::account_repository::{AccountRepository, AccountRepositoryError};
@@ -28,13 +29,18 @@ impl EnterWorld {
             .ok_or(EnterWorldError::CharacterNotFound)?;
 
         let position = character.last_pos;
-        let player = Player::default();
+        let hp = character.score.hp;
+        let mp = character.score.mp;
+        let player = Player {
+            base_character: character,
+            current_score: Score { hp, mp, ..Default::default() },
+        };
 
         let insert_result = world.add_player(client_id, player, position)?;
-
         let entity_id = EntityId::Player(client_id);
-        let mut mob = world.get_mob_mut(entity_id).unwrap();
-        let Mob::Player(player) = &mut mob;
+        world.recalculate_score(entity_id);
+        let mob = world.get_mob_mut(entity_id).unwrap();
+        let Mob::Player(player) = mob;
         let position = insert_result.position;
 
         sender.send_to(
@@ -139,7 +145,7 @@ mod tests {
     async fn enter_world_places_player_on_map() {
         let repository = TestAccountRepository::new().await;
         let sender = MockPacketSender::default();
-        let mut world = World::new();
+        let mut world = World::default();
         let client_id = 1;
         let position = Position { x: 2100, y: 2100 };
         let account_id = setup_account_with_character(&repository, position).await;
@@ -166,7 +172,7 @@ mod tests {
     async fn enter_world_sends_character_login_and_create_mob_to_player() {
         let repository = TestAccountRepository::new().await;
         let sender = MockPacketSender::default();
-        let mut world = World::new();
+        let mut world = World::default();
         let client_id = 1;
         let account_id =
             setup_account_with_character(&repository, Position { x: 2100, y: 2100 }).await;
@@ -196,7 +202,7 @@ mod tests {
     async fn enter_world_character_not_found() {
         let repository = TestAccountRepository::new().await;
         let sender = MockPacketSender::default();
-        let mut world = World::new();
+        let mut world = World::default();
 
         let account_id = Uuid::new_v4();
         repository
@@ -228,7 +234,7 @@ mod tests {
     async fn enter_world_sends_create_mob_to_spectators() {
         let repository = TestAccountRepository::new().await;
         let sender = MockPacketSender::default();
-        let mut world = World::new();
+        let mut world = World::default();
 
         let spectator_id = 10;
         let spectator_char = Player {
@@ -271,7 +277,7 @@ mod tests {
     async fn enter_world_at_occupied_position_finds_nearby() {
         let repository = TestAccountRepository::new().await;
         let sender = MockPacketSender::default();
-        let mut world = World::new();
+        let mut world = World::default();
 
         let blocker_char = Player {
             base_character: Character {

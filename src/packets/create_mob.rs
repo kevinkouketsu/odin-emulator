@@ -17,10 +17,10 @@ impl ToCreateMob for Mob {
                     position,
                     mob_id,
                     name: base_character.name.clone(),
-                    score: base_character.score,
+                    score: *player.current_score(),
                     equipments: base_character.equipments.clone(),
                     guild: base_character.guild,
-                    guild_level: base_character.guild_level.clone(),
+                    guild_level: base_character.guild_level,
                     create_type: 0,
                     affect: [0; 32],
                 }

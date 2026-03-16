@@ -5,5 +5,6 @@ edition = "2024"
 
 [dependencies]
 chrono = "0.4.38"
+log = "0.4"
 thiserror = "1.0.65"
 uuid = { version = "1.11.0", features = ["v4"] }

@@ -1784,6 +1784,7 @@ name = "odin-models"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "log",
  "thiserror 1.0.65",
  "uuid",
 ]

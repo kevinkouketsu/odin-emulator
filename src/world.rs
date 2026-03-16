@@ -1,17 +1,51 @@
 use crate::map::{EntityId, InsertResult, Map, MapError, RemoveResult};
-use odin_models::{character::Character, position::Position, status::Score};
+use crate::score::calculate_score;
+use crate::services::equipments::Equipments;
+use odin_models::{
+    character::Character, item_data::ItemDatabase, position::Position, status::Score,
+};
 use std::collections::HashMap;
 
 pub struct World {
     map: Map,
     entities: HashMap<EntityId, Mob>,
+    item_db: ItemDatabase,
 }
 
 impl World {
-    pub fn new() -> Self {
+    pub fn new(item_db: ItemDatabase) -> Self {
         Self {
             map: Map::new(),
             entities: HashMap::new(),
+            item_db,
+        }
+    }
+
+    pub fn item_db(&self) -> &ItemDatabase {
+        &self.item_db
+    }
+
+    pub fn recalculate_score(&mut self, entity_id: EntityId) {
+        let Some(mob) = self.entities.get_mut(&entity_id) else {
+            return;
+        };
+        match mob {
+            Mob::Player(player) => {
+                let equipments = Equipments::from(player.base_character.equipments.clone());
+                player.current_score = calculate_score(
+                    &player.base_character.score,
+                    player.current_score.hp,
+                    player.current_score.mp,
+                    &equipments,
+                    &self.item_db,
+                );
+
+                log::debug!(
+                    "Recalculated score for player {:?}: {:?}",
+                    entity_id,
+                    player.current_score
+                );
+            }
         }
     }
 
@@ -52,7 +86,7 @@ impl World {
 
 impl Default for World {
     fn default() -> Self {
-        Self::new()
+        Self::new(ItemDatabase::default())
     }
 }
 

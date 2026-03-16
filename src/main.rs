@@ -5,6 +5,7 @@ pub mod handlers;
 pub mod map;
 pub mod message;
 pub mod packets;
+pub mod score;
 pub mod services;
 pub mod session;
 pub mod user_session;
@@ -18,6 +19,7 @@ use game_server_context::GameServerContext;
 use map::EntityId;
 use message::{Message, MessageError};
 use odin_database::DatabaseService;
+use odin_models::item_data::ItemDatabase;
 use odin_networking::{
     enc_session::EncDecSession, framed_message::HandshakeState, messages::header::Header,
 };
@@ -97,7 +99,19 @@ async fn main() {
     let account_repository = connection.account_repository();
     let mut context =
         GameServerContext::new(ClientIdManager::with_maximum(750), account_repository);
-    let mut world = World::new();
+    let item_db = match std::fs::read("ItemList.csv") {
+        Ok(bytes) => {
+            let contents: String = bytes.iter().map(|&b| b as char).collect();
+            let db = ItemDatabase::from_csv(&contents).expect("Failed to parse ItemList.csv");
+            log::info!("Loaded ItemList.csv");
+            db
+        }
+        Err(e) => {
+            log::warn!("ItemList.csv not found: {e}, using empty item database");
+            ItemDatabase::default()
+        }
+    };
+    let mut world = World::new(item_db);
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<GameEvent>();
     let listener = TcpListener::bind(cli.addr).await.unwrap();
