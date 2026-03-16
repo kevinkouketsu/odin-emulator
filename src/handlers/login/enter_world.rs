@@ -90,7 +90,8 @@ mod tests {
     use super::*;
     use crate::handlers::tests::{MockPacketSender, TestAccountRepository};
     use odin_models::{
-        account_charlist::AccountCharlist, character::Character, position::Position, uuid::Uuid,
+        account_charlist::AccountCharlist, character::Character, position::Position, status::Score,
+        uuid::Uuid,
     };
     use odin_networking::messages::ServerMessage;
 
@@ -230,11 +231,14 @@ mod tests {
         let mut world = World::new();
 
         let spectator_id = 10;
-        let spectator_char = Character {
-            identifier: Uuid::new_v4(),
-            name: "Spectator".to_string(),
-            last_pos: Position { x: 2105, y: 2105 },
-            ..Default::default()
+        let spectator_char = Player {
+            base_character: Character {
+                identifier: Uuid::new_v4(),
+                name: "Spectator".to_string(),
+                last_pos: Position { x: 2105, y: 2105 },
+                ..Default::default()
+            },
+            current_score: Score::default(),
         };
         world
             .add_player(spectator_id, spectator_char, Position { x: 2105, y: 2105 })
@@ -269,11 +273,14 @@ mod tests {
         let sender = MockPacketSender::default();
         let mut world = World::new();
 
-        let blocker_char = Character {
-            identifier: Uuid::new_v4(),
-            name: "Blocker".to_string(),
-            last_pos: Position { x: 2100, y: 2100 },
-            ..Default::default()
+        let blocker_char = Player {
+            base_character: Character {
+                identifier: Uuid::new_v4(),
+                name: "Blocker".to_string(),
+                last_pos: Position { x: 2100, y: 2100 },
+                ..Default::default()
+            },
+            current_score: Score::default(),
         };
         world
             .add_player(10, blocker_char, Position { x: 2100, y: 2100 })

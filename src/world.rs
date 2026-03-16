@@ -69,8 +69,8 @@ impl Mob {
 
 #[derive(Default)]
 pub struct Player {
-    base_character: Character,
-    current_score: Score,
+    pub base_character: Character,
+    pub current_score: Score,
 }
 impl Player {
     pub fn base_character(&self) -> &Character {
