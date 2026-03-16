@@ -4,7 +4,7 @@ pub mod login;
 pub mod tests {
     use crate::{
         configuration::{CliVer, Configuration, ServerState},
-        session::{SessionError, SessionTrait},
+        session::{PacketSender, SessionError, SessionTrait},
     };
     use deku::prelude::*;
     use odin_database::{
@@ -15,7 +15,7 @@ pub mod tests {
     use odin_models::{
         account_charlist::AccountCharlist, character::Character, item::Item, uuid::Uuid,
     };
-    use odin_networking::WritableResource;
+    use odin_networking::{WritableResource, messages::ServerMessage};
     use std::{ops::Deref, sync::RwLock};
 
     #[derive(Clone)]
@@ -183,6 +183,44 @@ pub mod tests {
 
         fn get_server_state(&self) -> ServerState {
             self.1
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct SentPacket {
+        pub client_id: usize,
+        pub identifier: ServerMessage,
+        pub bytes: Vec<u8>,
+    }
+
+    #[derive(Default)]
+    pub struct MockPacketSender {
+        pub messages: RwLock<Vec<SentPacket>>,
+    }
+    impl PacketSender for MockPacketSender {
+        fn send_to<W: WritableResource>(
+            &self,
+            client_id: usize,
+            message: W,
+        ) -> Result<(), SessionError> {
+            let bytes: Vec<u8> = message.write()?.to_bytes()?;
+            self.messages.try_write().unwrap().push(SentPacket {
+                client_id,
+                identifier: W::IDENTIFIER,
+                bytes,
+            });
+            Ok(())
+        }
+    }
+    impl MockPacketSender {
+        pub fn messages_for(&self, client_id: usize) -> Vec<SentPacket> {
+            self.messages
+                .read()
+                .unwrap()
+                .iter()
+                .filter(|p| p.client_id == client_id)
+                .cloned()
+                .collect()
         }
     }
 }

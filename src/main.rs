@@ -4,16 +4,18 @@ pub mod game_server_context;
 pub mod handlers;
 pub mod map;
 pub mod message;
+pub mod packets;
 pub mod services;
 pub mod session;
 pub mod user_session;
+pub mod world;
 
 use bytes::Bytes;
 use clap::Parser;
 use client_id_manager::ClientIdManager;
 use deku::prelude::*;
 use game_server_context::GameServerContext;
-use map::{EntityId, Map};
+use map::EntityId;
 use message::{Message, MessageError};
 use odin_database::DatabaseService;
 use odin_networking::{
@@ -25,7 +27,8 @@ use tokio::{
     net::TcpListener,
     sync::mpsc,
 };
-use user_session::UserSession;
+use user_session::{SenderSession, UserSession};
+use world::World;
 
 const KEYTABLE: [u8; 512] = [
     0x14, 0x17, 0x47, 0x67, 0x7A, 0x09, 0x21, 0x0D, 0x5B, 0x5B, 0x15, 0x0D, 0x17, 0x11, 0x21, 0x0C,
@@ -94,7 +97,7 @@ async fn main() {
     let account_repository = connection.account_repository();
     let mut context =
         GameServerContext::new(ClientIdManager::with_maximum(750), account_repository);
-    let mut map = Map::new();
+    let mut world = World::new();
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<GameEvent>();
     let listener = TcpListener::bind(cli.addr).await.unwrap();
@@ -148,6 +151,10 @@ async fn main() {
                 });
 
                 let encdec = EncDecSession::new(client_id as u16, keytable.clone());
+                context.add_sender(
+                    client_id,
+                    SenderSession::new(encdec.clone(), writer_tx.clone()),
+                );
                 context.add_session(
                     client_id,
                     UserSession::new(client_id, writer_tx.clone(), encdec),
@@ -200,12 +207,12 @@ async fn main() {
                         };
 
                         log::info!("Received packet {:?} from {}", message, client_id);
-                        session.handle(&context, &mut map, message).await;
+                        session.handle(&context, &mut world, message).await;
                         context.add_session(client_id, session);
                     }
                     GameEvent::Disconnected { client_id } => {
-                        if let Ok(_result) = map.remove(EntityId::Player(client_id)) {
-                            // TODO: Send remove packets to _result.spectators
+                        if let Ok(_result) = world.remove_entity(EntityId::Player(client_id)) {
+                            // TODO: Send remove packets to _result.spectators via context.send_to()
                         }
                         if context.disconnect(client_id).is_err() {
                             log::error!(

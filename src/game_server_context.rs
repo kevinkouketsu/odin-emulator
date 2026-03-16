@@ -1,13 +1,16 @@
 use crate::{
     client_id_manager::{ClientIdManager, ClientIdManagerError},
     configuration::{CliVer, Configuration, ServerState},
-    user_session::UserSession,
+    session::{PacketSender, SessionError, SessionTrait},
+    user_session::{SenderSession, UserSession},
 };
+use odin_networking::WritableResource;
 use odin_repositories::account_repository::AccountRepository;
 use std::collections::HashMap;
 
 pub struct GameServerContext<A: AccountRepository> {
     sessions: HashMap<usize, UserSession>,
+    senders: HashMap<usize, SenderSession>,
     client_id_manager: ClientIdManager,
     current_cliver: CliVer,
     pub account_repository: A,
@@ -19,6 +22,7 @@ where
     pub fn new(client_id_manager: ClientIdManager, account_repository: A) -> Self {
         Self {
             sessions: Default::default(),
+            senders: Default::default(),
             client_id_manager,
             current_cliver: CliVer::new(11022),
             account_repository,
@@ -41,8 +45,13 @@ where
         self.sessions.remove(&client_id)
     }
 
+    pub fn add_sender(&mut self, client_id: usize, sender: SenderSession) {
+        self.senders.insert(client_id, sender);
+    }
+
     pub fn disconnect(&mut self, client_id: usize) -> Result<(), ClientIdManagerError> {
         self.sessions.remove(&client_id);
+        self.senders.remove(&client_id);
         self.client_id_manager.remove(client_id)
     }
 }
@@ -56,5 +65,22 @@ where
 
     fn get_server_state(&self) -> ServerState {
         ServerState::Maintenance
+    }
+}
+
+impl<A> PacketSender for GameServerContext<A>
+where
+    A: AccountRepository,
+{
+    fn send_to<W: WritableResource>(
+        &self,
+        client_id: usize,
+        message: W,
+    ) -> Result<(), SessionError> {
+        let sender = self
+            .senders
+            .get(&client_id)
+            .ok_or(SessionError::Disconnected)?;
+        sender.send(message)
     }
 }

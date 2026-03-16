@@ -20,3 +20,11 @@ pub enum SessionError {
     #[error("Client disconnected")]
     Disconnected,
 }
+
+pub trait PacketSender {
+    fn send_to<W: WritableResource>(
+        &self,
+        client_id: usize,
+        message: W,
+    ) -> Result<(), SessionError>;
+}

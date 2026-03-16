@@ -207,6 +207,13 @@ pub enum EntityId {
     Player(usize),
     Mob(usize),
 }
+impl EntityId {
+    pub fn id(&self) -> usize {
+        match self {
+            EntityId::Player(id) | EntityId::Mob(id) => *id,
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum MapError {

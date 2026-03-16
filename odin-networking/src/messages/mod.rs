@@ -45,6 +45,8 @@ pub enum ServerMessage {
     CreatedCharacter,
     DeleteCharacter,
     CharacterNameAlreadyExists,
+    CreateMob,
+    CharacterLogin,
 }
 impl TryFrom<ServerMessage> for u16 {
     type Error = InvalidMessageType;
@@ -58,6 +60,8 @@ impl TryFrom<ServerMessage> for u16 {
             ServerMessage::CreatedCharacter => 0x110,
             ServerMessage::DeleteCharacter => 0x112,
             ServerMessage::CharacterNameAlreadyExists => 0x11A,
+            ServerMessage::CreateMob => 0x364,
+            ServerMessage::CharacterLogin => 0x114,
         })
     }
 }
