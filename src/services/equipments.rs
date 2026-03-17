@@ -1,6 +1,6 @@
 use odin_models::{EquipmentSlot, MAX_EQUIPS, item::Item};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Equipments {
     items: [Option<Item>; MAX_EQUIPS],
 }

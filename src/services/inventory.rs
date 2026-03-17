@@ -3,6 +3,14 @@ use odin_models::{MAX_INVENTORY_VISIBLE, item::Item};
 pub struct Inventory {
     items: [Option<Item>; MAX_INVENTORY_VISIBLE],
 }
+
+impl Default for Inventory {
+    fn default() -> Self {
+        Self {
+            items: [None; MAX_INVENTORY_VISIBLE],
+        }
+    }
+}
 impl Inventory {
     pub fn iter(&self) -> impl Iterator<Item = (usize, &Item)> {
         self.items

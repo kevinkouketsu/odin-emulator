@@ -4,6 +4,7 @@ pub mod login;
 pub mod tests {
     use crate::{
         configuration::{CliVer, Configuration, ServerState},
+        map::EntityId,
         session::{PacketSender, SessionError, SessionTrait},
     };
     use deku::prelude::*;
@@ -213,12 +214,12 @@ pub mod tests {
         }
     }
     impl MockPacketSender {
-        pub fn messages_for(&self, client_id: usize) -> Vec<SentPacket> {
+        pub fn messages_for(&self, entity_id: EntityId) -> Vec<SentPacket> {
             self.messages
                 .read()
                 .unwrap()
                 .iter()
-                .filter(|p| p.client_id == client_id)
+                .filter(|p| p.client_id == entity_id.id())
                 .cloned()
                 .collect()
         }

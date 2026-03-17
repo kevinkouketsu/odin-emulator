@@ -3,7 +3,6 @@ use crate::packets::ToCharacterLogin;
 use crate::session::{PacketSender, SessionError};
 use crate::world::{Mob, Player, World};
 use crate::{map::MapError, packets::ToCreateMob};
-use odin_models::status::Score;
 use odin_models::uuid::Uuid;
 use odin_networking::{WritableResourceError, messages::client::enter_world::EnterWorldRaw};
 use odin_repositories::account_repository::{AccountRepository, AccountRepositoryError};
@@ -29,38 +28,32 @@ impl EnterWorld {
             .ok_or(EnterWorldError::CharacterNotFound)?;
 
         let position = character.last_pos;
-        let hp = character.score.hp;
-        let mp = character.score.mp;
-        let player = Player {
-            base_character: character,
-            current_score: Score { hp, mp, ..Default::default() },
-        };
-
-        let insert_result = world.add_player(client_id, player, position)?;
         let entity_id = EntityId::Player(client_id);
+        let player = Player::from_character(entity_id, character);
+        let insert_result = world.add_player(entity_id, player, position)?;
         world.recalculate_score(entity_id);
-        let mob = world.get_mob_mut(entity_id).unwrap();
+
+        let mob = world.get_mob(entity_id).unwrap();
         let Mob::Player(player) = mob;
         let position = insert_result.position;
 
-        sender.send_to(
-            client_id,
-            player.to_character_login(position, client_id as u16),
-        )?;
+        sender.send_to(client_id, player.to_character_login(position))?;
 
-        sender.send_to(client_id, mob.to_create_mob(entity_id, position))?;
+        let my_create_mob = mob.to_create_mob(position);
+        sender.send_to(client_id, my_create_mob.clone())?;
 
-        for spectator in insert_result.spectators {
-            let Some(mob) = world.get_mob(spectator) else {
+        for spectator_entity in insert_result.spectators {
+            let Some(spectator) = world.get_mob(spectator_entity) else {
                 continue;
             };
 
             let spectator_pos = world
                 .map()
-                .get_position(spectator)
+                .get_position(spectator_entity)
                 .expect("spectator from map must have a position");
 
-            sender.send_to(spectator.id(), mob.to_create_mob(spectator, spectator_pos))?;
+            sender.send_to(client_id, spectator.to_create_mob(spectator_pos))?;
+            sender.send_to(spectator_entity.id(), my_create_mob.clone())?;
         }
 
         Ok(())
@@ -96,8 +89,7 @@ mod tests {
     use super::*;
     use crate::handlers::tests::{MockPacketSender, TestAccountRepository};
     use odin_models::{
-        account_charlist::AccountCharlist, character::Character, position::Position, status::Score,
-        uuid::Uuid,
+        account_charlist::AccountCharlist, character::Character, position::Position, uuid::Uuid,
     };
     use odin_networking::messages::ServerMessage;
 
@@ -173,14 +165,14 @@ mod tests {
         let repository = TestAccountRepository::new().await;
         let sender = MockPacketSender::default();
         let mut world = World::default();
-        let client_id = 1;
+        let client_id = EntityId::Player(1);
         let account_id =
             setup_account_with_character(&repository, Position { x: 2100, y: 2100 }).await;
 
         enter_world(0)
             .handle(
                 account_id,
-                client_id,
+                client_id.id(),
                 repository.account_repository(),
                 &sender,
                 &mut world,
@@ -231,21 +223,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn enter_world_sends_create_mob_to_spectators() {
+    async fn enter_world_spectator_receives_entering_player() {
         let repository = TestAccountRepository::new().await;
         let sender = MockPacketSender::default();
         let mut world = World::default();
 
-        let spectator_id = 10;
-        let spectator_char = Player {
-            base_character: Character {
+        let spectator_id = EntityId::Player(10);
+        let spectator_char = Player::from_character(
+            spectator_id,
+            Character {
                 identifier: Uuid::new_v4(),
                 name: "Spectator".to_string(),
                 last_pos: Position { x: 2105, y: 2105 },
                 ..Default::default()
             },
-            current_score: Score::default(),
-        };
+        );
         world
             .add_player(spectator_id, spectator_char, Position { x: 2105, y: 2105 })
             .unwrap();
@@ -266,11 +258,78 @@ mod tests {
             .unwrap();
 
         let spectator_messages = sender.messages_for(spectator_id);
+        assert_eq!(spectator_messages.len(), 1);
         assert_eq!(
-            spectator_messages.len(),
-            1,
-            "spectator should receive CreateMob for the entering player"
+            spectator_messages[0].identifier,
+            ServerMessage::CreateMob,
+            "spectator should receive CreateMob of the entering player"
         );
+    }
+
+    #[tokio::test]
+    async fn enter_world_player_receives_each_spectator() {
+        let repository = TestAccountRepository::new().await;
+        let sender = MockPacketSender::default();
+        let mut world = World::default();
+
+        for i in 0..3 {
+            let spectator = Player::from_character(
+                EntityId::Player(10 + i),
+                Character {
+                    identifier: Uuid::new_v4(),
+                    name: format!("Spectator{}", i),
+                    last_pos: Position {
+                        x: 2100 + i as u16,
+                        y: 2101,
+                    },
+                    ..Default::default()
+                },
+            );
+            world
+                .add_player(
+                    EntityId::Player(10 + i),
+                    spectator,
+                    Position {
+                        x: 2100 + i as u16,
+                        y: 2101,
+                    },
+                )
+                .unwrap();
+        }
+
+        let entity_id = EntityId::Player(1);
+        let account_id =
+            setup_account_with_character(&repository, Position { x: 2100, y: 2100 }).await;
+
+        enter_world(0)
+            .handle(
+                account_id,
+                entity_id.id(),
+                repository.account_repository(),
+                &sender,
+                &mut world,
+            )
+            .await
+            .unwrap();
+
+        let messages = sender.messages_for(entity_id);
+        // CharacterLogin + own CreateMob + 3 spectator CreateMobs
+        assert_eq!(messages.len(), 5);
+        assert_eq!(messages[0].identifier, ServerMessage::CharacterLogin);
+        assert_eq!(messages[1].identifier, ServerMessage::CreateMob);
+        assert_eq!(messages[2].identifier, ServerMessage::CreateMob);
+        assert_eq!(messages[3].identifier, ServerMessage::CreateMob);
+        assert_eq!(messages[4].identifier, ServerMessage::CreateMob);
+
+        for spectator_offset in 0..3 {
+            let spectator_messages = sender.messages_for(EntityId::Player(10 + spectator_offset));
+            assert_eq!(
+                spectator_messages.len(),
+                1,
+                "each spectator should receive exactly one CreateMob"
+            );
+            assert_eq!(spectator_messages[0].identifier, ServerMessage::CreateMob);
+        }
     }
 
     #[tokio::test]
@@ -279,27 +338,31 @@ mod tests {
         let sender = MockPacketSender::default();
         let mut world = World::default();
 
-        let blocker_char = Player {
-            base_character: Character {
+        let blocker_char = Player::from_character(
+            EntityId::Player(10),
+            Character {
                 identifier: Uuid::new_v4(),
                 name: "Blocker".to_string(),
                 last_pos: Position { x: 2100, y: 2100 },
                 ..Default::default()
             },
-            current_score: Score::default(),
-        };
+        );
         world
-            .add_player(10, blocker_char, Position { x: 2100, y: 2100 })
+            .add_player(
+                EntityId::Player(10),
+                blocker_char,
+                Position { x: 2100, y: 2100 },
+            )
             .unwrap();
 
-        let client_id = 1;
+        let entity_id = EntityId::Player(1);
         let account_id =
             setup_account_with_character(&repository, Position { x: 2100, y: 2100 }).await;
 
         enter_world(0)
             .handle(
                 account_id,
-                client_id,
+                entity_id.id(),
                 repository.account_repository(),
                 &sender,
                 &mut world,
@@ -307,10 +370,7 @@ mod tests {
             .await
             .unwrap();
 
-        let pos = world
-            .map()
-            .get_position(EntityId::Player(client_id))
-            .unwrap();
+        let pos = world.map().get_position(entity_id).unwrap();
         assert_ne!(
             pos,
             Position { x: 2100, y: 2100 },

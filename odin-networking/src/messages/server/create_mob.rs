@@ -10,6 +10,7 @@ use std::array;
 
 const MAX_AFFECT: usize = 32;
 
+#[derive(Clone)]
 pub struct CreateMob {
     pub position: Position,
     pub mob_id: u16,
