@@ -39,7 +39,7 @@ pub struct CharacterLogin {
     pub base_score: Score,
     pub current_score: Score,
 
-    pub critical: i32,
+    pub critical: u8,
     pub save_mana: i32,
     pub magic: i32,
     pub regen_hp: i32,
@@ -92,7 +92,7 @@ impl WritableResource for CharacterLogin {
             score_bonus: 0,
             special_bonus: 0,
             skill_bonus: 0,
-            critical: self.critical.clamp(0, 255) as u8,
+            critical: self.critical,
             save_mana: self.save_mana.clamp(0, 255) as u8,
             short_skill: [0xFF; 4],
             guild_level,

@@ -26,7 +26,7 @@ impl ToCharacterLogin for Player {
             inventory: self.inventory.clone(),
             base_score: self.score,
             current_score: self.computed.score,
-            critical: self.computed.critical,
+            critical: self.computed.critical.raw(),
             save_mana: self.computed.save_mana,
             magic: self.computed.magic,
             regen_hp: self.computed.regen_hp,

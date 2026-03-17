@@ -23,6 +23,7 @@ odin-macros = { path = "./odin-macros" }
 odin-models = { path = "./odin-models" }
 odin-networking = { path = "./odin-networking" }
 odin-repositories = { path = "./odin-repositories" }
+rand = { version = "0.8", features = ["small_rng"] }
 thiserror = "1.0.50"
 tokio = { version = "1.41.0", features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "sync"] }
 

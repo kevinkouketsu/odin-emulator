@@ -36,10 +36,14 @@ impl World {
             Mob::Player(player) => {
                 let hp = player.computed.score.hp;
                 let mp = player.computed.score.mp;
-                let new_computed =
-                    StatBuilder::from_base(&player.score, player.class, &self.item_db)
-                        .apply_equipment(&player.equipments)
-                        .finalize(hp, mp);
+                let new_computed = StatBuilder::from_base(
+                    &player.score,
+                    player.class,
+                    player.evolution,
+                    &self.item_db,
+                )
+                .apply_equipment(&player.equipments)
+                .finalize(hp, mp);
                 let changed = player.computed != new_computed;
                 player.computed = new_computed;
                 changed

@@ -1,7 +1,14 @@
+pub mod base;
+pub mod critical;
 mod equipment;
 
+use critical::Critical;
 use odin_models::{
-    EquipmentSlots, character::Class, effect::Effect, item_data::ItemDatabase, status::Score,
+    EquipmentSlots,
+    character::{Class, Evolution},
+    effect::Effect,
+    item_data::ItemDatabase,
+    status::Score,
 };
 
 const SPECIAL_EFFECTS: [Effect; 4] = [
@@ -15,7 +22,7 @@ const SPECIAL_EFFECTS: [Effect; 4] = [
 pub struct ComputedScore {
     pub score: Score,
 
-    pub critical: i32,
+    pub critical: Critical,
     pub magic: i32,
     pub parry: i32,
     pub hit_rate: i32,
@@ -66,7 +73,7 @@ pub struct StatBuilder<'a> {
     inc_hp: i32,
     inc_mp: i32,
 
-    critical: i32,
+    critical: Critical,
     magic: i32,
     parry: i32,
     hit_rate: i32,
@@ -95,7 +102,13 @@ pub struct StatBuilder<'a> {
 }
 
 impl<'a> StatBuilder<'a> {
-    pub fn from_base(base: &Score, class: Class, item_db: &'a ItemDatabase) -> Self {
+    pub fn from_base(
+        base: &Score,
+        class: Class,
+        evolution: Evolution,
+        item_db: &'a ItemDatabase,
+    ) -> Self {
+        let base = base::calculate_base_score(base, class, evolution);
         Self {
             item_db,
             class,
@@ -113,7 +126,7 @@ impl<'a> StatBuilder<'a> {
             inc_defense: 100,
             inc_hp: 100,
             inc_mp: 100,
-            critical: 0,
+            critical: Critical::default(),
             magic: 0,
             parry: 0,
             hit_rate: 0,
@@ -216,9 +229,12 @@ mod tests {
     use super::*;
     use odin_models::{
         EquipmentSlot,
+        character::Evolution,
         item::Item,
         item_data::{ItemData, ItemDataEffect, MAX_ITEM_DATA_EFFECTS},
     };
+
+    const E: Evolution = Evolution::Mortal;
 
     fn make_item_data(id: u16, effect: Effect, value: i16) -> ItemData {
         let mut effects = [ItemDataEffect::default(); MAX_ITEM_DATA_EFFECTS];
@@ -246,16 +262,10 @@ mod tests {
     }
 
     #[test]
-    fn from_base_roundtrips_through_finalize() {
+    fn from_base_preserves_non_computed_fields() {
         let db = ItemDatabase::default();
         let base = Score {
             level: 5,
-            damage: 100,
-            defense: 50,
-            max_hp: 500,
-            max_mp: 200,
-            hp: 400,
-            mp: 150,
             strength: 30,
             intelligence: 20,
             dexterity: 15,
@@ -263,17 +273,12 @@ mod tests {
             specials: [1, 2, 3, 4],
             reserved: -1,
             attack_run: 2,
+            ..Default::default()
         };
 
-        let result = StatBuilder::from_base(&base, Class::TransKnight, &db).finalize(400, 150);
+        let result = StatBuilder::from_base(&base, Class::TransKnight, E, &db).finalize(400, 150);
 
         assert_eq!(result.score.level, 5);
-        assert_eq!(result.score.damage, 100);
-        assert_eq!(result.score.defense, 50);
-        assert_eq!(result.score.max_hp, 500);
-        assert_eq!(result.score.max_mp, 200);
-        assert_eq!(result.score.hp, 400);
-        assert_eq!(result.score.mp, 150);
         assert_eq!(result.score.strength, 30);
         assert_eq!(result.score.intelligence, 20);
         assert_eq!(result.score.dexterity, 15);
@@ -284,16 +289,43 @@ mod tests {
     }
 
     #[test]
-    fn finalize_clamps_negative_stats_to_zero() {
-        let db = ItemDatabase::from_items([make_item_data(100, Effect::Damage, -999)]);
-        let equips = EquipmentSlots::from([(EquipmentSlot::LeftWeapon, Item::from(100u16))]);
+    fn from_base_computes_base_damage_and_defense() {
+        let db = ItemDatabase::default();
+        // Level 10 mortal TK: damage = 5 + 1*10 = 15, defense = 4 + 1*10 = 14
         let base = Score {
-            damage: 10,
-            max_hp: 1,
+            level: 10,
             ..Default::default()
         };
 
-        let result = StatBuilder::from_base(&base, Class::TransKnight, &db)
+        let result = StatBuilder::from_base(&base, Class::TransKnight, E, &db).finalize(0, 0);
+
+        assert_eq!(result.score.damage, 15);
+        assert_eq!(result.score.defense, 14);
+    }
+
+    #[test]
+    fn from_base_computes_base_hp_mp() {
+        let db = ItemDatabase::default();
+        // Level 10 mortal TK: max_hp = 3*10 + 80 = 110, max_mp = 1*10 + 45 = 55
+        let base = Score {
+            level: 10,
+            ..Default::default()
+        };
+
+        let result = StatBuilder::from_base(&base, Class::TransKnight, E, &db).finalize(0, 0);
+
+        assert_eq!(result.score.max_hp, 110);
+        assert_eq!(result.score.max_mp, 55);
+    }
+
+    #[test]
+    fn finalize_clamps_negative_stats_to_zero() {
+        let db = ItemDatabase::from_items([make_item_data(100, Effect::Damage, -999)]);
+        let equips = EquipmentSlots::from([(EquipmentSlot::LeftWeapon, Item::from(100u16))]);
+        // level 0 mortal TK: base damage = 5
+        let base = Score::default();
+
+        let result = StatBuilder::from_base(&base, Class::TransKnight, E, &db)
             .apply_equipment(&equips)
             .finalize(1, 0);
 
@@ -302,10 +334,13 @@ mod tests {
 
     #[test]
     fn finalize_max_hp_minimum_is_one() {
-        let db = ItemDatabase::default();
+        let db = ItemDatabase::from_items([make_item_data(100, Effect::Hp, -9999)]);
+        let equips = EquipmentSlots::from([(EquipmentSlot::LeftWeapon, Item::from(100u16))]);
         let base = Score::default();
 
-        let result = StatBuilder::from_base(&base, Class::TransKnight, &db).finalize(0, 0);
+        let result = StatBuilder::from_base(&base, Class::TransKnight, E, &db)
+            .apply_equipment(&equips)
+            .finalize(0, 0);
 
         assert_eq!(result.score.max_hp, 1);
     }
@@ -313,42 +348,38 @@ mod tests {
     #[test]
     fn finalize_clamps_hp_to_max() {
         let db = ItemDatabase::default();
-        let base = Score {
-            max_hp: 50,
-            ..Default::default()
-        };
+        // level 0 mortal TK: max_hp = 80
+        let base = Score::default();
 
-        let result = StatBuilder::from_base(&base, Class::TransKnight, &db).finalize(100, 0);
+        let result = StatBuilder::from_base(&base, Class::TransKnight, E, &db).finalize(9999, 0);
 
-        assert_eq!(result.score.hp, 50);
+        assert_eq!(result.score.hp, 80);
     }
 
     #[test]
     fn finalize_clamps_mp_to_max() {
         let db = ItemDatabase::default();
-        let base = Score {
-            max_mp: 30,
-            ..Default::default()
-        };
+        // level 0 mortal TK: max_mp = 45
+        let base = Score::default();
 
-        let result = StatBuilder::from_base(&base, Class::TransKnight, &db).finalize(0, 100);
+        let result = StatBuilder::from_base(&base, Class::TransKnight, E, &db).finalize(0, 9999);
 
-        assert_eq!(result.score.mp, 30);
+        assert_eq!(result.score.mp, 45);
     }
 
     #[test]
     fn percentage_multipliers_default_to_identity() {
         let db = ItemDatabase::default();
+        // level 10 mortal TK: damage = 15, max_hp = 110
         let base = Score {
-            damage: 100,
-            max_hp: 200,
+            level: 10,
             ..Default::default()
         };
 
-        let result = StatBuilder::from_base(&base, Class::TransKnight, &db).finalize(200, 0);
+        let result = StatBuilder::from_base(&base, Class::TransKnight, E, &db).finalize(200, 0);
 
-        assert_eq!(result.score.damage, 100);
-        assert_eq!(result.score.max_hp, 200);
+        assert_eq!(result.score.damage, 15);
+        assert_eq!(result.score.max_hp, 110);
     }
 
     #[test]
@@ -356,9 +387,9 @@ mod tests {
         let db = ItemDatabase::default();
         let base = Score::default();
 
-        let result = StatBuilder::from_base(&base, Class::TransKnight, &db).finalize(0, 0);
+        let result = StatBuilder::from_base(&base, Class::TransKnight, E, &db).finalize(0, 0);
 
-        assert_eq!(result.critical, 0);
+        assert_eq!(result.critical, Critical::default());
         assert_eq!(result.magic, 0);
         assert_eq!(result.resist, [0; 4]);
         assert_eq!(result.life_steal, 0);
@@ -369,18 +400,14 @@ mod tests {
     fn apply_equipment_adds_damage_bonus() {
         let db = ItemDatabase::from_items([make_item_data(100, Effect::Damage, 50)]);
         let equips = EquipmentSlots::from([(EquipmentSlot::LeftWeapon, Item::from(100u16))]);
-        let base = Score {
-            damage: 10,
-            max_hp: 100,
-            ..Default::default()
-        };
+        // level 0 mortal TK: base damage = 5
+        let base = Score::default();
 
-        let result = StatBuilder::from_base(&base, Class::TransKnight, &db)
+        let result = StatBuilder::from_base(&base, Class::TransKnight, E, &db)
             .apply_equipment(&equips)
             .finalize(100, 0);
 
-        assert_eq!(result.score.damage, 60);
-        assert_eq!(result.score.max_hp, 100);
+        assert_eq!(result.score.damage, 55); // 5 base + 50 equip
     }
 
     #[test]
@@ -393,34 +420,31 @@ mod tests {
             (EquipmentSlot::LeftWeapon, Item::from(100u16)),
             (EquipmentSlot::RightWeapon, Item::from(200u16)),
         ]);
-        let base = Score {
-            damage: 10,
-            ..Default::default()
-        };
+        let base = Score::default();
 
-        let result = StatBuilder::from_base(&base, Class::TransKnight, &db)
+        let result = StatBuilder::from_base(&base, Class::TransKnight, E, &db)
             .apply_equipment(&equips)
             .finalize(0, 0);
 
-        assert_eq!(result.score.damage, 60);
+        assert_eq!(result.score.damage, 55); // 5 base + 30 + 20
     }
 
     #[test]
     fn apply_equipment_empty_is_noop() {
         let db = ItemDatabase::default();
         let equips = EquipmentSlots::default();
+        // level 10 mortal TK: damage = 15, max_hp = 110
         let base = Score {
-            damage: 10,
-            max_hp: 100,
+            level: 10,
             ..Default::default()
         };
 
-        let result = StatBuilder::from_base(&base, Class::TransKnight, &db)
+        let result = StatBuilder::from_base(&base, Class::TransKnight, E, &db)
             .apply_equipment(&equips)
-            .finalize(100, 0);
+            .finalize(110, 0);
 
-        assert_eq!(result.score.damage, 10);
-        assert_eq!(result.score.max_hp, 100);
+        assert_eq!(result.score.damage, 15);
+        assert_eq!(result.score.max_hp, 110);
     }
 
     #[test]
@@ -430,45 +454,43 @@ mod tests {
         let equips = EquipmentSlots::from([(EquipmentSlot::LeftWeapon, item)]);
         let base = Score::default();
 
-        let result = StatBuilder::from_base(&base, Class::TransKnight, &db)
+        let result = StatBuilder::from_base(&base, Class::TransKnight, E, &db)
             .apply_equipment(&equips)
             .finalize(0, 0);
 
-        assert_eq!(result.score.damage, 60);
+        assert_eq!(result.score.damage, 65); // 5 base + 50 template + 10 runtime
     }
 
     #[test]
-    fn full_pipeline_matches_old_behavior() {
+    fn full_pipeline_with_equipment() {
         let db = ItemDatabase::from_items([make_item_data(100, Effect::Damage, 50)]);
         let equips = EquipmentSlots::from([(EquipmentSlot::LeftWeapon, Item::from(100u16))]);
+        // level 10 mortal TK: base damage = 15, max_hp = 110
         let base = Score {
-            damage: 10,
-            max_hp: 100,
-            hp: 100,
+            level: 10,
             ..Default::default()
         };
 
-        let result = StatBuilder::from_base(&base, Class::TransKnight, &db)
+        let result = StatBuilder::from_base(&base, Class::TransKnight, E, &db)
             .apply_equipment(&equips)
-            .finalize(base.hp, base.mp);
+            .finalize(100, 0);
 
-        assert_eq!(result.score.damage, 60);
-        assert_eq!(result.score.max_hp, 100);
+        assert_eq!(result.score.damage, 65); // 15 base + 50 equip
+        assert_eq!(result.score.max_hp, 110);
+        assert_eq!(result.score.hp, 100);
     }
 
     #[test]
     fn full_pipeline_clamps_hp_to_new_max() {
         let db = ItemDatabase::default();
         let equips = EquipmentSlots::default();
-        let base = Score {
-            max_hp: 50,
-            ..Default::default()
-        };
+        // level 0 mortal TK: max_hp = 80
+        let base = Score::default();
 
-        let result = StatBuilder::from_base(&base, Class::TransKnight, &db)
+        let result = StatBuilder::from_base(&base, Class::TransKnight, E, &db)
             .apply_equipment(&equips)
-            .finalize(100, 0);
+            .finalize(9999, 0);
 
-        assert_eq!(result.score.hp, 50);
+        assert_eq!(result.score.hp, 80);
     }
 }
