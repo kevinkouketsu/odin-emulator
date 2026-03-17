@@ -39,6 +39,10 @@ pub struct CharacterLogin {
     pub base_score: Score,
     pub current_score: Score,
 
+    pub score_bonus: i16,
+    pub special_bonus: i16,
+    pub skill_bonus: i16,
+
     pub critical: u8,
     pub save_mana: i32,
     pub magic: i32,
@@ -89,9 +93,9 @@ impl WritableResource for CharacterLogin {
             equip,
             carry,
             learned_skill: [0; 2],
-            score_bonus: 0,
-            special_bonus: 0,
-            skill_bonus: 0,
+            score_bonus: self.score_bonus,
+            special_bonus: self.special_bonus,
+            skill_bonus: self.skill_bonus,
             critical: self.critical,
             save_mana: self.save_mana.clamp(0, 255) as u8,
             short_skill: [0xFF; 4],

@@ -4,16 +4,20 @@ use odin_models::{
 };
 
 struct ClassStats {
+    base_str: i32,
+    base_int: i32,
+    base_dex: i32,
+    base_con: i32,
     base_hp: i32,
     base_mp: i32,
 }
 
 #[rustfmt::skip]
 const CLASS_STATS: [ClassStats; 4] = [
-    ClassStats { base_hp: 80, base_mp: 45 }, // TransKnight
-    ClassStats { base_hp: 60, base_mp: 65 }, // Foema
-    ClassStats { base_hp: 70, base_mp: 55 }, // BeastMaster
-    ClassStats { base_hp: 75, base_mp: 60 }, // Huntress
+    ClassStats { base_str: 8, base_int: 4, base_dex:  7, base_con: 6, base_hp: 80, base_mp: 45 }, // TransKnight
+    ClassStats { base_str: 5, base_int: 8, base_dex:  5, base_con: 5, base_hp: 60, base_mp: 65 }, // Foema
+    ClassStats { base_str: 6, base_int: 6, base_dex:  9, base_con: 5, base_hp: 70, base_mp: 55 }, // BeastMaster
+    ClassStats { base_str: 8, base_int: 9, base_dex: 13, base_con: 6, base_hp: 75, base_mp: 60 }, // Huntress
 ];
 
 struct HpMpPerLevel {
@@ -27,6 +31,16 @@ const HP_MP_PER_LEVEL: [HpMpPerLevel; 4] = [
     HpMpPerLevel { hp: 1, mp: 2 },
     HpMpPerLevel { hp: 2, mp: 1 },
 ];
+
+pub fn base_class_stats(class: Class) -> (i32, i32, i32, i32) {
+    let stats = &CLASS_STATS[i32::from(class) as usize];
+    (
+        stats.base_str,
+        stats.base_int,
+        stats.base_dex,
+        stats.base_con,
+    )
+}
 
 pub fn score_points(level: u16, evolution: Evolution) -> i32 {
     let level = level as i32;

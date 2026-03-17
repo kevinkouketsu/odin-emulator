@@ -1,3 +1,4 @@
+pub mod gameplay;
 pub mod login;
 
 #[cfg(test)]

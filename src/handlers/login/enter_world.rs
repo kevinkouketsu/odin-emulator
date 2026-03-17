@@ -29,9 +29,17 @@ impl EnterWorld {
 
         let position = character.last_pos;
         let entity_id = EntityId::Player(client_id);
-        let player = Player::from_character(entity_id, character);
-        let insert_result = world.add_player(entity_id, player, position)?;
+        let insert_result = world.add_player(
+            entity_id,
+            Player::from_character(entity_id, character),
+            position,
+        )?;
         world.recalculate_score(entity_id);
+
+        {
+            let Mob::Player(player) = world.get_mob_mut(entity_id).unwrap();
+            player.calculate_bonus_points();
+        }
 
         let mob = world.get_mob(entity_id).unwrap();
         let Mob::Player(player) = mob;

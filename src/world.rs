@@ -1,4 +1,5 @@
 use crate::map::{EntityId, InsertResult, Map, MapError, RemoveResult};
+use crate::score::base::{base_class_stats, master_points, score_points};
 use crate::score::{ComputedScore, StatBuilder};
 use odin_models::character::Character;
 use odin_models::character::{Class, Evolution, GuildLevel};
@@ -127,6 +128,9 @@ pub struct Player {
     pub inventory: InventorySlots,
     pub equipments: EquipmentSlots,
     pub computed: ComputedScore,
+    pub score_bonus: i16,
+    pub special_bonus: i16,
+    pub skill_bonus: i16,
 }
 
 impl Player {
@@ -159,6 +163,9 @@ impl Player {
                 },
                 ..Default::default()
             },
+            score_bonus: 0,
+            special_bonus: 0,
+            skill_bonus: 0,
         }
     }
 
@@ -178,5 +185,20 @@ impl Player {
 
     pub fn current_score(&self) -> &Score {
         &self.computed.score
+    }
+
+    pub fn calculate_bonus_points(&mut self) {
+        let (base_str, base_int, base_dex, base_con) = base_class_stats(self.class);
+
+        let total_score = score_points(self.score.level, self.evolution);
+        let spent_score = (self.score.strength as i32 - base_str)
+            + (self.score.intelligence as i32 - base_int)
+            + (self.score.dexterity as i32 - base_dex)
+            + (self.score.constitution as i32 - base_con);
+        self.score_bonus = (total_score - spent_score) as i16;
+
+        let total_master = master_points(self.score.level, self.evolution);
+        let spent_master: i32 = self.score.specials.iter().map(|&s| s as i32).sum();
+        self.special_bonus = (total_master - spent_master) as i16;
     }
 }

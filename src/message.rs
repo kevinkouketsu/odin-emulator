@@ -1,9 +1,12 @@
-use crate::handlers::login::{
-    authentication::{Authentication, AuthenticationError},
-    create_character::CreateCharacter,
-    delete_character::DeleteCharacter,
-    enter_world::EnterWorld,
-    numeric_token::NumericToken,
+use crate::handlers::{
+    gameplay::apply_bonus::ApplyBonus,
+    login::{
+        authentication::{Authentication, AuthenticationError},
+        create_character::CreateCharacter,
+        delete_character::DeleteCharacter,
+        enter_world::EnterWorld,
+        numeric_token::NumericToken,
+    },
 };
 use deku::prelude::*;
 use odin_macros::HandlerDerive;
@@ -12,8 +15,9 @@ use odin_networking::{
     messages::{
         ClientMessage,
         client::{
-            create_character::CreateCharacterRaw, delete_character::DeleteCharacterRaw,
-            enter_world::EnterWorldRaw, login::LoginMessageRaw, numeric_token::NumericTokenRaw,
+            apply_bonus::ApplyBonusRaw, create_character::CreateCharacterRaw,
+            delete_character::DeleteCharacterRaw, enter_world::EnterWorldRaw,
+            login::LoginMessageRaw, numeric_token::NumericTokenRaw,
         },
         header::Header,
     },
@@ -34,6 +38,8 @@ pub enum Message {
     DeleteCharacter(DeleteCharacter),
     #[raw = "EnterWorldRaw"]
     EnterWorld(EnterWorld),
+    #[raw = "ApplyBonusRaw"]
+    ApplyBonus(ApplyBonus),
 }
 
 #[derive(Debug, Error)]

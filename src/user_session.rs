@@ -1,5 +1,6 @@
 use crate::{
     game_server_context::GameServerContext,
+    map::EntityId,
     message::Message,
     session::{SessionError, SessionTrait},
     world::World,
@@ -109,9 +110,15 @@ impl UserSession {
                     message => log::error!("Got a message in incorrect state: {:?}", message),
                 }
             }
-            Session::World => {
-                log::error!("Unhandled message in World state: {:?}", message);
-            }
+            Session::World => match message {
+                Message::ApplyBonus(msg) => {
+                    let entity_id = EntityId::Player(self.client_id);
+                    if let Err(e) = msg.handle(entity_id, world, context) {
+                        log::warn!("ApplyBonus failed: {e:?}");
+                    }
+                }
+                message => log::error!("Unhandled message in World state: {:?}", message),
+            },
         }
     }
 
