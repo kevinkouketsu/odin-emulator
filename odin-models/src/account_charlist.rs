@@ -1,7 +1,7 @@
 use crate::{
+    EquipmentSlots,
     account::{AccessLevel, Ban},
     character::Class,
-    item::Item,
     position::Position,
     status::Score,
     storage::Storage,
@@ -26,7 +26,7 @@ pub struct CharacterInfo {
     pub status: Score,
     pub guild: Option<u16>,
     pub class: Class,
-    pub equipments: Vec<(usize, Item)>,
+    pub equipments: EquipmentSlots,
     pub coin: u32,
     pub experience: i64,
     pub position: Position,

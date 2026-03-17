@@ -14,7 +14,7 @@ pub mod tests {
         sea_orm::{ActiveValue::NotSet, Database, Set, prelude::*},
     };
     use odin_models::{
-        account_charlist::AccountCharlist, character::Character, item::Item, uuid::Uuid,
+        SlotIndex, account_charlist::AccountCharlist, character::Character, item::Item, uuid::Uuid,
     };
     use odin_networking::{WritableResource, messages::ServerMessage};
     use std::{ops::Deref, sync::RwLock};
@@ -95,14 +95,14 @@ pub mod tests {
             .await
             .unwrap();
 
-            let mut items = Self::get_items(
+            let mut items = Self::get_items_from_slots(
                 character.identifier,
-                &character.equipments,
+                character.equipments.iter().map(|(k, item)| (k.to_index(), item)),
                 ItemCategory::Equip,
             );
-            items.extend(Self::get_items(
+            items.extend(Self::get_items_from_slots(
                 character.identifier,
-                &character.inventory,
+                character.inventory.iter(),
                 ItemCategory::Inventory,
             ));
 
@@ -114,18 +114,17 @@ pub mod tests {
             }
         }
 
-        fn get_items<T: Into<usize> + Copy>(
+        fn get_items_from_slots<'a>(
             character_id: Uuid,
-            items: &[(T, Item)],
+            items: impl Iterator<Item = (usize, &'a Item)>,
             category: ItemCategory,
         ) -> Vec<odin_database::entity::item::ActiveModel> {
             items
-                .iter()
                 .map(
                     |(index, equipment)| odin_database::entity::item::ActiveModel {
                         id: Set(Uuid::new_v4()),
                         r#type: Set(category),
-                        slot: Set((*index).into() as i16),
+                        slot: Set(index as i16),
                         item_id: Set(equipment.id as i16),
                         ef1: Set(equipment.effects[0].index as i16),
                         efv1: Set(equipment.effects[0].value as i16),

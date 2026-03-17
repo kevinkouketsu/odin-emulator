@@ -4,9 +4,9 @@ use crate::{
 };
 use deku::prelude::*;
 use odin_models::{
-    EquipmentSlot, MAX_EQUIPS, character::GuildLevel, item::Item, position::Position, status::Score,
+    EquipmentSlot, EquipmentSlots, MAX_EQUIPS, character::GuildLevel, item::Item,
+    position::Position, status::Score,
 };
-use std::array;
 
 const MAX_AFFECT: usize = 32;
 
@@ -16,7 +16,7 @@ pub struct CreateMob {
     pub mob_id: u16,
     pub name: String,
     pub score: Score,
-    pub equipments: Vec<(EquipmentSlot, Item)>,
+    pub equipments: EquipmentSlots,
     pub guild: Option<i16>,
     pub guild_level: Option<GuildLevel>,
     pub create_type: u16,
@@ -28,23 +28,14 @@ impl WritableResource for CreateMob {
     type Output = CreateMobRaw;
 
     fn write(self) -> Result<Self::Output, WritableResourceError> {
-        let equip: [VisualEquipRaw; MAX_EQUIPS] = array::from_fn(|i| {
-            let slot = match EquipmentSlot::try_from(i) {
-                Ok(s) => s,
-                Err(_) => return VisualEquipRaw::default(),
-            };
-            self.equipments
-                .iter()
-                .find(|(s, _)| *s == slot)
-                .map(|(s, item)| VisualEquipRaw::from_equipment(*s, item))
-                .unwrap_or_default()
-        });
+        let equip = self
+            .equipments
+            .map_slots(|s, item| VisualEquipRaw::from_equipment(s, item));
 
         let face_index = self
             .equipments
-            .iter()
-            .find(|(s, _)| *s == EquipmentSlot::Face)
-            .map(|(_, item)| item.id as i16)
+            .get(EquipmentSlot::Face)
+            .map(|item| item.id as i16)
             .unwrap_or(0);
 
         let guild_level = match self.guild_level {

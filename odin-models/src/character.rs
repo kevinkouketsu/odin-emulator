@@ -1,4 +1,4 @@
-use crate::{EquipmentSlot, item::Item, position::Position, status::Score};
+use crate::{EquipmentSlots, InventorySlots, position::Position, status::Score};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -23,8 +23,8 @@ pub struct Character {
     pub coin: i32,
     pub experience: i64,
     pub last_pos: Position,
-    pub inventory: Vec<(usize, Item)>,
-    pub equipments: Vec<(EquipmentSlot, Item)>,
+    pub inventory: InventorySlots,
+    pub equipments: EquipmentSlots,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

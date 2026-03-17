@@ -8,7 +8,7 @@ use crate::{
 };
 use deku::prelude::*;
 use odin_models::{
-    EquipmentSlot, MAX_EQUIPS, MAX_INVENTORY,
+    MAX_EQUIPS, MAX_INVENTORY,
     character::{Character, GuildLevel},
     position::Position,
 };
@@ -76,25 +76,15 @@ pub struct StructMobRaw {
 
 impl StructMobRaw {
     fn from_character(character: &Character) -> Self {
-        let equip: [ItemRaw; MAX_EQUIPS] = array::from_fn(|i| {
-            let slot = match EquipmentSlot::try_from(i) {
-                Ok(s) => s,
-                Err(_) => return ItemRaw::default(),
-            };
-            character
-                .equipments
-                .iter()
-                .find(|(s, _)| *s == slot)
-                .map(|(_, item)| ItemRaw::from(*item))
-                .unwrap_or_default()
-        });
+        let equip = character
+            .equipments
+            .map_slots(|_, item| ItemRaw::from(*item));
 
         let carry: [ItemRaw; MAX_INVENTORY] = array::from_fn(|i| {
             character
                 .inventory
-                .iter()
-                .find(|(idx, _)| *idx == i)
-                .map(|(_, item)| ItemRaw::from(*item))
+                .get(i)
+                .map(|item| ItemRaw::from(*item))
                 .unwrap_or_default()
         });
 

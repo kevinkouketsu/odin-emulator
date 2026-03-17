@@ -1,4 +1,3 @@
-use crate::map::EntityId;
 use crate::world::Mob;
 use odin_models::position::Position;
 use odin_networking::messages::server::create_mob::CreateMob;
@@ -15,7 +14,7 @@ impl ToCreateMob for Mob {
                 mob_id: player.entity_id().id() as u16,
                 name: player.name.clone(),
                 score: *player.current_score(),
-                equipments: player.equipments.iter().map(|(s, i)| (s, *i)).collect(),
+                equipments: player.equipments.clone(),
                 guild: player.guild,
                 guild_level: player.guild_level,
                 create_type: 0,

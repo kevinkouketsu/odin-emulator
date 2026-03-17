@@ -4,6 +4,7 @@ pub mod character;
 pub mod effect;
 pub mod item;
 pub mod item_data;
+pub mod item_slots;
 pub mod nickname;
 pub mod position;
 pub mod status;
@@ -17,6 +18,12 @@ pub const MAX_INVENTORY: usize = 64;
 pub const MAX_INVENTORY_VISIBLE: usize = MAX_INVENTORY - 4;
 
 pub use uuid;
+
+pub use item_slots::{ItemSlots, SlotIndex};
+
+pub type InventorySlots = ItemSlots<usize, MAX_INVENTORY_VISIBLE>;
+pub type EquipmentSlots = ItemSlots<EquipmentSlot, MAX_EQUIPS>;
+pub type StorageSlots = ItemSlots<usize, MAX_STORAGE_ITEMS>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EquipmentSlot {
@@ -36,6 +43,8 @@ pub enum EquipmentSlot {
     Costume = 13,
     Mount = 14,
     Mantle = 15,
+    Reserved1 = 16,
+    Reserved2 = 17,
 }
 impl EquipmentSlot {
     pub fn as_index(self) -> usize {
@@ -47,6 +56,15 @@ impl From<EquipmentSlot> for usize {
         val.as_index()
     }
 }
+impl SlotIndex for EquipmentSlot {
+    fn to_index(self) -> usize {
+        self.as_index()
+    }
+    fn from_index(index: usize) -> Option<Self> {
+        Self::try_from(index).ok()
+    }
+}
+
 impl TryFrom<usize> for EquipmentSlot {
     type Error = String;
 
@@ -68,6 +86,8 @@ impl TryFrom<usize> for EquipmentSlot {
             13 => EquipmentSlot::Costume,
             14 => EquipmentSlot::Mount,
             15 => EquipmentSlot::Mantle,
+            16 => EquipmentSlot::Reserved1,
+            17 => EquipmentSlot::Reserved2,
             _ => return Err(format!("Can't convert {value} to EquipmentSlot")),
         };
 

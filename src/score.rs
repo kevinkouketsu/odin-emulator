@@ -1,5 +1,5 @@
-use crate::services::equipments::Equipments;
 use odin_models::{
+    EquipmentSlots,
     effect::Effect,
     item::Item,
     item_data::ItemDatabase,
@@ -27,7 +27,7 @@ pub fn item_ability(item: &Item, effect: Effect, item_db: &ItemDatabase) -> i32 
     total
 }
 
-pub fn mob_ability(equipments: &Equipments, effect: Effect, item_db: &ItemDatabase) -> i32 {
+pub fn mob_ability(equipments: &EquipmentSlots, effect: Effect, item_db: &ItemDatabase) -> i32 {
     equipments
         .iter()
         .map(|(_, item)| item_ability(item, effect, item_db))
@@ -38,7 +38,7 @@ pub fn calculate_score(
     base_score: &Score,
     current_hp: u32,
     current_mp: u32,
-    equipments: &Equipments,
+    equipments: &EquipmentSlots,
     item_db: &ItemDatabase,
 ) -> Score {
     let damage = (base_score.damage as i32 + mob_ability(equipments, Effect::Damage, item_db))
@@ -159,7 +159,7 @@ mod tests {
             make_item_data(200, Effect::Damage, 20),
         ]);
 
-        let equipments = Equipments::from([
+        let equipments = EquipmentSlots::from([
             (EquipmentSlot::LeftWeapon, Item::from(100u16)),
             (EquipmentSlot::RightWeapon, Item::from(200u16)),
         ]);
@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn calculate_score_applies_equipment_bonuses() {
         let db = ItemDatabase::from_items([make_item_data(100, Effect::Damage, 50)]);
-        let equipments = Equipments::from([(EquipmentSlot::LeftWeapon, Item::from(100u16))]);
+        let equipments = EquipmentSlots::from([(EquipmentSlot::LeftWeapon, Item::from(100u16))]);
         let base = Score {
             damage: 10,
             max_hp: 100,
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn calculate_score_clamps_hp_to_new_max() {
         let db = ItemDatabase::default();
-        let equipments = Equipments::from([] as [(EquipmentSlot, Item); 0]);
+        let equipments = EquipmentSlots::from([] as [(EquipmentSlot, Item); 0]);
         let base = Score {
             max_hp: 50,
             hp: 100,

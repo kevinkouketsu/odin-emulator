@@ -1,13 +1,12 @@
 use crate::map::{EntityId, InsertResult, Map, MapError, RemoveResult};
 use crate::score::calculate_score;
-use crate::services::equipments::Equipments;
-use crate::services::inventory::Inventory;
 use odin_models::character::Character;
 use odin_models::character::{Class, Evolution, GuildLevel};
 use odin_models::item_data::ItemDatabase;
 use odin_models::position::Position;
 use odin_models::status::Score;
 use odin_models::uuid::Uuid;
+use odin_models::{EquipmentSlots, InventorySlots};
 use std::collections::HashMap;
 
 pub struct World {
@@ -119,8 +118,8 @@ pub struct Player {
     pub coin: i32,
     pub experience: i64,
     pub last_pos: Position,
-    pub inventory: Inventory,
-    pub equipments: Equipments,
+    pub inventory: InventorySlots,
+    pub equipments: EquipmentSlots,
     pub current_score: Score,
 }
 
@@ -144,8 +143,8 @@ impl Player {
             coin: character.coin,
             experience: character.experience,
             last_pos: character.last_pos,
-            inventory: Inventory::from(character.inventory),
-            equipments: Equipments::from(character.equipments),
+            inventory: character.inventory,
+            equipments: character.equipments,
             current_score: Score {
                 hp,
                 mp,
@@ -190,8 +189,8 @@ impl From<&Player> for Character {
             coin: player.coin,
             experience: player.experience,
             last_pos: player.last_pos,
-            inventory: player.inventory.iter().map(|(i, item)| (i, *item)).collect(),
-            equipments: player.equipments.iter().map(|(s, item)| (s, *item)).collect(),
+            inventory: player.inventory.clone(),
+            equipments: player.equipments.clone(),
         }
     }
 }

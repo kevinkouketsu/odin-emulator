@@ -6,7 +6,6 @@ pub mod map;
 pub mod message;
 pub mod packets;
 pub mod score;
-pub mod services;
 pub mod session;
 pub mod user_session;
 pub mod world;

@@ -7,7 +7,7 @@ use entity::{
     start_item::Entity as StartItemEntity,
 };
 use odin_models::{
-    EquipmentSlot,
+    EquipmentSlot, EquipmentSlots, InventorySlots,
     account::{AccessLevel, Ban, BanType},
     account_charlist::{AccountCharlist, CharacterInfo},
     character::{Character as CharacterModel, Class, GuildLevel},
@@ -36,16 +36,17 @@ impl DatabaseAccountRepository {
         &self,
         character: Character,
     ) -> Result<CharacterInfo, AccountRepositoryError> {
-        let equipments = ItemEntity::find()
+        let equipments: EquipmentSlots = ItemEntity::find()
             .filter(entity::item::Column::Type.eq(ItemCategory::Equip))
             .filter(entity::item::Column::CharacterId.eq(character.id))
             .all(&self.connection)
             .await
             .map_err(map_to_fail_to_load)?
             .into_iter()
-            .map(|item| {
-                (
-                    item.slot as usize,
+            .filter_map(|item| {
+                let slot = EquipmentSlot::try_from(item.slot as usize).ok()?;
+                Some((
+                    slot,
                     Item::from((
                         item.item_id as u16,
                         item.ef1 as u8,
@@ -55,9 +56,10 @@ impl DatabaseAccountRepository {
                         item.ef3 as u8,
                         item.efv3 as u8,
                     )),
-                )
+                ))
             })
-            .collect();
+            .collect::<Vec<_>>()
+            .into();
 
         Ok(CharacterInfo {
             identifier: character.id,
@@ -183,18 +185,20 @@ impl AccountRepository for DatabaseAccountRepository {
             .await
             .map_err(map_to_fail_to_load)?;
 
-        let mut equipments: Vec<(EquipmentSlot, Item)> = vec![];
-        let mut inventory: Vec<(usize, Item)> = vec![];
+        let mut equipments = EquipmentSlots::default();
+        let mut inventory = InventorySlots::default();
 
         for item in items {
             match item.r#type {
-                ItemCategory::Equip => equipments.push((
-                    (item.slot as usize)
+                ItemCategory::Equip => {
+                    let slot: EquipmentSlot = (item.slot as usize)
                         .try_into()
-                        .map_err(AccountRepositoryError::CharacterNotValid)?,
-                    item.into(),
-                )),
-                ItemCategory::Inventory => inventory.push((item.slot as usize, item.into())),
+                        .map_err(AccountRepositoryError::CharacterNotValid)?;
+                    equipments.set(slot, item.into());
+                }
+                ItemCategory::Inventory => {
+                    inventory.set(item.slot as usize, item.into());
+                }
             }
         }
 

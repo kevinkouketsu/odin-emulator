@@ -10,8 +10,8 @@ use crate::{
 use deku::prelude::*;
 use odin_macros::MessageSignalDerive;
 use odin_models::{
-    MAX_EQUIPS, MAX_STORAGE_ITEMS, account_charlist::CharacterInfo, item::Item, position::Position,
-    status::Score, storage::Storage,
+    EquipmentSlots, MAX_EQUIPS, MAX_STORAGE_ITEMS, account_charlist::CharacterInfo,
+    position::Position, status::Score, storage::Storage,
 };
 use std::array;
 
@@ -38,13 +38,7 @@ impl WritableResource for FirstCharlist {
         Ok(FirstCharlistRaw {
             token,
             data: character_info,
-            storage_items: self.storage.items.into_iter().fold(
-                [ItemRaw::default(); MAX_STORAGE_ITEMS],
-                |mut acc, (index, item)| {
-                    acc[index] = item.into();
-                    acc
-                },
-            ),
+            storage_items: self.storage.items.map_slots(|_, item| (*item).into()),
             storage_coin: self.storage.coin,
             account_name: self.account_name.try_into()?,
             ssn1: 0,
@@ -78,7 +72,7 @@ pub struct CharlistInfo {
     pub position: Position,
     pub name: String,
     pub status: Score,
-    pub equips: Vec<(usize, Item)>,
+    pub equips: EquipmentSlots,
     pub guild: Option<u16>,
     pub coin: u32,
     pub experience: i64,
@@ -87,9 +81,9 @@ impl From<CharacterInfo> for CharlistInfo {
     fn from(character: CharacterInfo) -> Self {
         CharlistInfo {
             position: character.position,
-            name: character.name.clone(),
+            name: character.name,
             status: character.status,
-            equips: character.equipments.clone(),
+            equips: character.equipments,
             guild: character.guild,
             coin: character.coin,
             experience: character.experience,
@@ -150,13 +144,7 @@ impl From<&[(usize, CharlistInfo)]> for CharlistInfoRaw {
             }),
             score: map_character_info(value, |char| char.status.into()),
             equipments: map_character_info(value, |char| {
-                array::from_fn(|i| {
-                    char.equips
-                        .iter()
-                        .find_map(|(index, item)| (*index == i).then_some(item.to_owned()))
-                        .unwrap_or_default()
-                        .into()
-                })
+                char.equips.map_slots(|_, item| (*item).into())
             }),
             guilds: map_character_info(value, |char| char.guild.unwrap_or_default()),
             coin: map_character_info(value, |char| char.coin),

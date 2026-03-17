@@ -1,7 +1,7 @@
-use crate::item::Item;
+use crate::StorageSlots;
 
 #[derive(Debug, Default, Clone)]
 pub struct Storage {
-    pub items: Vec<(usize, Item)>,
+    pub items: StorageSlots,
     pub coin: u64,
 }

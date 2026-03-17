@@ -1,7 +1,4 @@
-use crate::{
-    services::{equipments::Equipments, inventory::Inventory},
-    session::{SessionError, SessionTrait},
-};
+use crate::session::{SessionError, SessionTrait};
 use odin_models::{
     EquipmentSlot, account_charlist::CharacterInfo, character::Evolution, uuid::Uuid,
 };
@@ -87,16 +84,15 @@ impl DeleteCharacter {
             return Err(DeleteCharacterError::Evolution(character.evolution));
         }
 
-        let equipments = Equipments::from(character.equipments);
-        if equipments
+        if character
+            .equipments
             .iter()
             .any(|(slot, _)| slot != EquipmentSlot::Face && slot != EquipmentSlot::Mantle)
         {
             return Err(DeleteCharacterError::EquippedItems);
         }
 
-        let inventory = Inventory::from(character.inventory);
-        if inventory.iter().count() != 0 {
+        if character.inventory.iter().count() != 0 {
             return Err(DeleteCharacterError::InventoryItems);
         }
 
@@ -255,7 +251,7 @@ mod tests {
                 },
                 vec![Character {
                     name: "charlist".to_string(),
-                    equipments: vec![(EquipmentSlot::Helmet, 3500.into())],
+                    equipments: vec![(EquipmentSlot::Helmet, 3500.into())].into(),
                     ..Default::default()
                 }],
             )
@@ -292,7 +288,7 @@ mod tests {
                 },
                 vec![Character {
                     name: "charlist".to_string(),
-                    equipments: vec![item],
+                    equipments: vec![item].into(),
                     ..Default::default()
                 }],
             )
@@ -330,7 +326,7 @@ mod tests {
                 },
                 vec![Character {
                     name: "charlist".to_string(),
-                    inventory: vec![(0, 11.into())],
+                    inventory: vec![(0, 11.into())].into(),
                     ..Default::default()
                 }],
             )
