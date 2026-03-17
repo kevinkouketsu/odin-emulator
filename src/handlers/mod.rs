@@ -97,7 +97,10 @@ pub mod tests {
 
             let mut items = Self::get_items_from_slots(
                 character.identifier,
-                character.equipments.iter().map(|(k, item)| (k.to_index(), item)),
+                character
+                    .equipments
+                    .iter()
+                    .map(|(k, item)| (k.to_index(), item)),
                 ItemCategory::Equip,
             );
             items.extend(Self::get_items_from_slots(

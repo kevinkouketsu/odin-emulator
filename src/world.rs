@@ -1,5 +1,5 @@
 use crate::map::{EntityId, InsertResult, Map, MapError, RemoveResult};
-use crate::score::calculate_score;
+use crate::score::{ComputedScore, StatBuilder};
 use odin_models::character::Character;
 use odin_models::character::{Class, Evolution, GuildLevel};
 use odin_models::item_data::ItemDatabase;
@@ -28,19 +28,21 @@ impl World {
         &self.item_db
     }
 
-    pub fn recalculate_score(&mut self, entity_id: EntityId) {
+    pub fn recalculate_score(&mut self, entity_id: EntityId) -> bool {
         let Some(mob) = self.entities.get_mut(&entity_id) else {
-            return;
+            return false;
         };
         match mob {
             Mob::Player(player) => {
-                player.current_score = calculate_score(
-                    &player.score,
-                    player.current_score.hp,
-                    player.current_score.mp,
-                    &player.equipments,
-                    &self.item_db,
-                );
+                let hp = player.computed.score.hp;
+                let mp = player.computed.score.mp;
+                let new_computed =
+                    StatBuilder::from_base(&player.score, player.class, &self.item_db)
+                        .apply_equipment(&player.equipments)
+                        .finalize(hp, mp);
+                let changed = player.computed != new_computed;
+                player.computed = new_computed;
+                changed
             }
         }
     }
@@ -120,7 +122,7 @@ pub struct Player {
     pub last_pos: Position,
     pub inventory: InventorySlots,
     pub equipments: EquipmentSlots,
-    pub current_score: Score,
+    pub computed: ComputedScore,
 }
 
 impl Player {
@@ -145,9 +147,12 @@ impl Player {
             last_pos: character.last_pos,
             inventory: character.inventory,
             equipments: character.equipments,
-            current_score: Score {
-                hp,
-                mp,
+            computed: ComputedScore {
+                score: Score {
+                    hp,
+                    mp,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         }
@@ -158,39 +163,16 @@ impl Player {
     }
 
     pub fn revive(&mut self) -> bool {
-        if self.current_score.hp > 0 {
+        if self.computed.score.hp > 0 {
             return false;
         }
 
-        self.current_score.hp = 2;
-        self.current_score.mp = 2.max(self.current_score.mp);
+        self.computed.score.hp = 2;
+        self.computed.score.mp = 2.max(self.computed.score.mp);
         true
     }
 
     pub fn current_score(&self) -> &Score {
-        &self.current_score
-    }
-}
-
-impl From<&Player> for Character {
-    fn from(player: &Player) -> Self {
-        Character {
-            identifier: player.identifier,
-            name: player.name.clone(),
-            slot: player.slot,
-            score: player.score,
-            evolution: player.evolution,
-            merchant: player.merchant,
-            guild: player.guild,
-            guild_level: player.guild_level,
-            class: player.class,
-            affect_info: player.affect_info,
-            quest_info: player.quest_info,
-            coin: player.coin,
-            experience: player.experience,
-            last_pos: player.last_pos,
-            inventory: player.inventory.clone(),
-            equipments: player.equipments.clone(),
-        }
+        &self.computed.score
     }
 }

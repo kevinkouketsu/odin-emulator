@@ -71,9 +71,12 @@ impl<K: SlotIndex, const N: usize> Clone for ItemSlots<K, N> {
 impl<K: SlotIndex, const N: usize> fmt::Debug for ItemSlots<K, N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list()
-            .entries(self.items.iter().enumerate().filter_map(|(i, item)| {
-                item.as_ref().map(|item| (i, item))
-            }))
+            .entries(
+                self.items
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, item)| item.as_ref().map(|item| (i, item))),
+            )
             .finish()
     }
 }

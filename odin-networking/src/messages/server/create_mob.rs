@@ -100,7 +100,6 @@ pub struct VisualEquipRaw {
     pub effect_index: u8,
     pub effect_value: u8,
 }
-
 impl VisualEquipRaw {
     pub fn from_equipment(slot: EquipmentSlot, item: &Item) -> Self {
         let slot_index = slot.as_index();

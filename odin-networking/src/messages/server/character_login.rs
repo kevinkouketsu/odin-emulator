@@ -8,9 +8,10 @@ use crate::{
 };
 use deku::prelude::*;
 use odin_models::{
-    MAX_EQUIPS, MAX_INVENTORY,
-    character::{Character, GuildLevel},
+    EquipmentSlots, InventorySlots, MAX_EQUIPS, MAX_INVENTORY,
+    character::{Class, Evolution, GuildLevel},
     position::Position,
+    status::Score,
 };
 use std::array;
 
@@ -19,8 +20,31 @@ const EXT2_SIZE: usize = 360;
 
 pub struct CharacterLogin {
     pub position: Position,
-    pub character: Character,
     pub client_id: u16,
+
+    pub name: String,
+    pub class: Class,
+    pub evolution: Evolution,
+    pub merchant: i16,
+    pub guild: Option<i16>,
+    pub guild_level: Option<GuildLevel>,
+    pub affect_info: i16,
+    pub quest_info: i16,
+    pub coin: i32,
+    pub experience: i64,
+    pub last_pos: Position,
+    pub equipments: EquipmentSlots,
+    pub inventory: InventorySlots,
+
+    pub base_score: Score,
+    pub current_score: Score,
+
+    pub critical: i32,
+    pub save_mana: i32,
+    pub magic: i32,
+    pub regen_hp: i32,
+    pub regen_mp: i32,
+    pub resist: [i32; 4],
 }
 
 impl WritableResource for CharacterLogin {
@@ -28,7 +52,60 @@ impl WritableResource for CharacterLogin {
     type Output = CharacterLoginRaw;
 
     fn write(self) -> Result<Self::Output, WritableResourceError> {
-        let mob = StructMobRaw::from_character(&self.character);
+        let equip = self.equipments.map_slots(|_, item| ItemRaw::from(*item));
+
+        let carry: [ItemRaw; MAX_INVENTORY] = array::from_fn(|i| {
+            self.inventory
+                .get(i)
+                .map(|item| ItemRaw::from(*item))
+                .unwrap_or_default()
+        });
+
+        let guild_level = match &self.guild_level {
+            Some(GuildLevel::Participant) => 1,
+            Some(GuildLevel::FirstCommander) => 3,
+            Some(GuildLevel::SecondCommander) => 4,
+            Some(GuildLevel::ThirdCommander) => 5,
+            Some(GuildLevel::Leader) => 9,
+            None => 0,
+        };
+
+        let mob = StructMobRaw {
+            mob_name: self.name.as_str().try_into().unwrap_or_default(),
+            clan: 0,
+            merchant: self.merchant as i8,
+            guild: self.guild.unwrap_or(0) as u16,
+            class: i32::from(self.class) as i8,
+            affect_info: self.affect_info as u8,
+            quest_info: self.quest_info as u16,
+            coin: self.coin,
+            exp: self.experience,
+            last_position: PositionRaw {
+                x: self.last_pos.x,
+                y: self.last_pos.y,
+            },
+            base_score: self.base_score.into(),
+            current_score: self.current_score.into(),
+            equip,
+            carry,
+            learned_skill: [0; 2],
+            score_bonus: 0,
+            special_bonus: 0,
+            skill_bonus: 0,
+            critical: self.critical.clamp(0, 255) as u8,
+            save_mana: self.save_mana.clamp(0, 255) as u8,
+            short_skill: [0xFF; 4],
+            guild_level,
+            magic: self.magic.max(0) as u32,
+            regen_hp: self.regen_hp.clamp(0, 255) as u8,
+            regen_mp: self.regen_mp.clamp(0, 255) as u8,
+            resist: [
+                self.resist[0].clamp(-128, 127) as i8,
+                self.resist[1].clamp(-128, 127) as i8,
+                self.resist[2].clamp(-128, 127) as i8,
+                self.resist[3].clamp(-128, 127) as i8,
+            ],
+        };
 
         Ok(CharacterLoginRaw {
             pos_x: self.position.x as i16,
@@ -74,63 +151,6 @@ pub struct StructMobRaw {
     pub resist: [i8; 4],
 }
 
-impl StructMobRaw {
-    fn from_character(character: &Character) -> Self {
-        let equip = character
-            .equipments
-            .map_slots(|_, item| ItemRaw::from(*item));
-
-        let carry: [ItemRaw; MAX_INVENTORY] = array::from_fn(|i| {
-            character
-                .inventory
-                .get(i)
-                .map(|item| ItemRaw::from(*item))
-                .unwrap_or_default()
-        });
-
-        let guild_level = match &character.guild_level {
-            Some(GuildLevel::Participant) => 1,
-            Some(GuildLevel::FirstCommander) => 3,
-            Some(GuildLevel::SecondCommander) => 4,
-            Some(GuildLevel::ThirdCommander) => 5,
-            Some(GuildLevel::Leader) => 9,
-            None => 0,
-        };
-
-        StructMobRaw {
-            mob_name: character.name.as_str().try_into().unwrap_or_default(),
-            clan: 0,
-            merchant: character.merchant as i8,
-            guild: character.guild.unwrap_or(0) as u16,
-            class: i32::from(character.class) as i8,
-            affect_info: character.affect_info as u8,
-            quest_info: character.quest_info as u16,
-            coin: character.coin,
-            exp: character.experience,
-            last_position: PositionRaw {
-                x: character.last_pos.x,
-                y: character.last_pos.y,
-            },
-            base_score: character.score.into(),
-            current_score: character.score.into(),
-            equip,
-            carry,
-            learned_skill: [0; 2],
-            score_bonus: 0,
-            special_bonus: 0,
-            skill_bonus: 0,
-            critical: 0,
-            save_mana: 0,
-            short_skill: [0xFF; 4],
-            guild_level,
-            magic: 0,
-            regen_hp: 0,
-            regen_mp: 0,
-            resist: [0; 4],
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, DekuRead, DekuWrite)]
 pub struct CharacterLoginRaw {
     pub pos_x: i16,
@@ -150,7 +170,34 @@ mod tests {
     use deku::DekuContainerWrite;
 
     fn default_struct_mob_raw() -> StructMobRaw {
-        StructMobRaw::from_character(&Character::default())
+        StructMobRaw {
+            mob_name: FixedSizeString::default(),
+            clan: 0,
+            merchant: 0,
+            guild: 0,
+            class: 0,
+            affect_info: 0,
+            quest_info: 0,
+            coin: 0,
+            exp: 0,
+            last_position: PositionRaw::default(),
+            base_score: ScoreRaw::default(),
+            current_score: ScoreRaw::default(),
+            equip: [ItemRaw::default(); MAX_EQUIPS],
+            carry: [ItemRaw::default(); MAX_INVENTORY],
+            learned_skill: [0; 2],
+            score_bonus: 0,
+            special_bonus: 0,
+            skill_bonus: 0,
+            critical: 0,
+            save_mana: 0,
+            short_skill: [0; 4],
+            guild_level: 0,
+            magic: 0,
+            regen_hp: 0,
+            regen_mp: 0,
+            resist: [0; 4],
+        }
     }
 
     #[test]
