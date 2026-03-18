@@ -6,6 +6,7 @@ pub mod message_panel;
 pub mod numeric_token;
 pub mod remove_mob;
 pub mod update_etc;
+pub mod update_score;
 
 use super::ServerMessage;
 use crate::WritableResource;

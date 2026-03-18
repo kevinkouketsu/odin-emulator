@@ -1,5 +1,5 @@
 use crate::map::EntityId;
-use crate::packets::ToCharacterLogin;
+use crate::packets::{BroadcastUpdateScore, ToCharacterLogin};
 use crate::session::{PacketSender, SessionError};
 use crate::world::{Mob, Player, World};
 use crate::{map::MapError, packets::ToCreateMob};
@@ -41,12 +41,16 @@ impl EnterWorld {
             player.calculate_bonus_points();
         }
 
-        let mob = world.get_mob(entity_id).unwrap();
-        let Mob::Player(player) = mob;
         let position = insert_result.position;
 
-        sender.send_to(client_id, player.to_character_login(position))?;
+        {
+            let Mob::Player(player) = world.get_mob(entity_id).unwrap();
+            sender.send_to(client_id, player.to_character_login(position))?;
+        }
 
+        world.broadcast_update_score(entity_id, sender)?;
+
+        let mob = world.get_mob(entity_id).unwrap();
         let my_create_mob = mob.to_create_mob(position);
         sender.send_to(client_id, my_create_mob.clone())?;
 
@@ -191,11 +195,12 @@ mod tests {
         let messages = sender.messages_for(client_id);
         assert_eq!(
             messages.len(),
-            2,
-            "should receive CharacterLogin + CreateMob"
+            3,
+            "should receive CharacterLogin + UpdateScore + CreateMob"
         );
         assert_eq!(messages[0].identifier, ServerMessage::CharacterLogin);
-        assert_eq!(messages[1].identifier, ServerMessage::CreateMob);
+        assert_eq!(messages[1].identifier, ServerMessage::UpdateScore);
+        assert_eq!(messages[2].identifier, ServerMessage::CreateMob);
     }
 
     #[tokio::test]
@@ -266,9 +271,14 @@ mod tests {
             .unwrap();
 
         let spectator_messages = sender.messages_for(spectator_id);
-        assert_eq!(spectator_messages.len(), 1);
+        assert_eq!(spectator_messages.len(), 2);
         assert_eq!(
             spectator_messages[0].identifier,
+            ServerMessage::UpdateScore,
+            "spectator should receive UpdateScore of the entering player"
+        );
+        assert_eq!(
+            spectator_messages[1].identifier,
             ServerMessage::CreateMob,
             "spectator should receive CreateMob of the entering player"
         );
@@ -321,22 +331,24 @@ mod tests {
             .unwrap();
 
         let messages = sender.messages_for(entity_id);
-        // CharacterLogin + own CreateMob + 3 spectator CreateMobs
-        assert_eq!(messages.len(), 5);
+        // CharacterLogin + UpdateScore + own CreateMob + 3 spectator CreateMobs
+        assert_eq!(messages.len(), 6);
         assert_eq!(messages[0].identifier, ServerMessage::CharacterLogin);
-        assert_eq!(messages[1].identifier, ServerMessage::CreateMob);
+        assert_eq!(messages[1].identifier, ServerMessage::UpdateScore);
         assert_eq!(messages[2].identifier, ServerMessage::CreateMob);
         assert_eq!(messages[3].identifier, ServerMessage::CreateMob);
         assert_eq!(messages[4].identifier, ServerMessage::CreateMob);
+        assert_eq!(messages[5].identifier, ServerMessage::CreateMob);
 
         for spectator_offset in 0..3 {
             let spectator_messages = sender.messages_for(EntityId::Player(10 + spectator_offset));
             assert_eq!(
                 spectator_messages.len(),
-                1,
-                "each spectator should receive exactly one CreateMob"
+                2,
+                "each spectator should receive UpdateScore + CreateMob"
             );
-            assert_eq!(spectator_messages[0].identifier, ServerMessage::CreateMob);
+            assert_eq!(spectator_messages[0].identifier, ServerMessage::UpdateScore);
+            assert_eq!(spectator_messages[1].identifier, ServerMessage::CreateMob);
         }
     }
 

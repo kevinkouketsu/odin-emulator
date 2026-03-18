@@ -81,7 +81,12 @@ impl From<Score> for ScoreRaw {
 }
 
 #[test]
-fn size_of() {
+fn serialized_sizes() {
+    use deku::DekuContainerWrite;
     assert_eq!(std::mem::size_of::<ItemRaw>(), 8);
-    assert_eq!(std::mem::size_of::<ScoreRaw>(), 48);
+    assert_eq!(
+        ScoreRaw::default().to_bytes().unwrap().len(),
+        44,
+        "ScoreRaw wire format must match C++ packed STRUCT_SCORE"
+    );
 }

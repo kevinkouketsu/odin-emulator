@@ -60,6 +60,7 @@ pub enum ServerMessage {
     ActionIllusion,
     ActionStop,
     RemoveMob,
+    UpdateScore,
 }
 impl TryFrom<ServerMessage> for u16 {
     type Error = InvalidMessageType;
@@ -80,6 +81,7 @@ impl TryFrom<ServerMessage> for u16 {
             ServerMessage::ActionIllusion => 0x368,
             ServerMessage::ActionStop => 0x366,
             ServerMessage::RemoveMob => 0x165,
+            ServerMessage::UpdateScore => 0x336,
         })
     }
 }

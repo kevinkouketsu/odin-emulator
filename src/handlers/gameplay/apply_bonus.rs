@@ -1,5 +1,5 @@
 use crate::map::EntityId;
-use crate::packets::ToUpdateEtc;
+use crate::packets::{BroadcastUpdateScore, ToUpdateEtc};
 use crate::session::{PacketSender, SessionError};
 use crate::world::{Mob, Player, World};
 use odin_networking::{WritableResourceError, messages::client::apply_bonus::ApplyBonusRaw};
@@ -46,8 +46,11 @@ impl ApplyBonus {
         }
         world.recalculate_score(entity_id);
 
-        let Mob::Player(player) = world.get_mob(entity_id).unwrap();
-        sender.send_to(entity_id.id(), player.to_update_etc())?;
+        {
+            let Mob::Player(player) = world.get_mob(entity_id).unwrap();
+            sender.send_to(entity_id.id(), player.to_update_etc())?;
+        }
+        world.broadcast_update_score(entity_id, sender)?;
         Ok(())
     }
 }
@@ -479,8 +482,9 @@ mod tests {
         assert_eq!(player.score_bonus, 74);
 
         let messages = sender.messages_for(entity_id);
-        assert_eq!(messages.len(), 1);
+        assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].identifier, ServerMessage::UpdateEtc);
+        assert_eq!(messages[1].identifier, ServerMessage::UpdateScore);
     }
 
     #[test]

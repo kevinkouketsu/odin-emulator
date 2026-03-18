@@ -65,14 +65,7 @@ impl WritableResource for CharacterLogin {
                 .unwrap_or_default()
         });
 
-        let guild_level = match &self.guild_level {
-            Some(GuildLevel::Participant) => 1,
-            Some(GuildLevel::FirstCommander) => 3,
-            Some(GuildLevel::SecondCommander) => 4,
-            Some(GuildLevel::ThirdCommander) => 5,
-            Some(GuildLevel::Leader) => 9,
-            None => 0,
-        };
+        let guild_level = self.guild_level.map(|g| g.as_raw() as i8).unwrap_or(0);
 
         let mob = StructMobRaw {
             mob_name: self.name.as_str().try_into().unwrap_or_default(),

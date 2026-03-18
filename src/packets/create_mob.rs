@@ -1,5 +1,5 @@
 use crate::world::Mob;
-use odin_models::position::Position;
+use odin_models::{MAX_AFFECT, position::Position};
 use odin_networking::messages::server::create_mob::CreateMob;
 
 pub trait ToCreateMob {
@@ -18,7 +18,7 @@ impl ToCreateMob for Mob {
                 guild: player.guild,
                 guild_level: player.guild_level,
                 create_type: 0,
-                affect: [0; 32],
+                affect: [0; MAX_AFFECT],
             },
         }
     }

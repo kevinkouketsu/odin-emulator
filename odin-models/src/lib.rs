@@ -16,6 +16,7 @@ pub const MAX_STORAGE_ITEMS: usize = 160;
 pub const MAX_ITEM_EFFECT: usize = 3;
 pub const MAX_INVENTORY: usize = 64;
 pub const MAX_INVENTORY_VISIBLE: usize = MAX_INVENTORY - 4;
+pub const MAX_AFFECT: usize = 32;
 
 pub use uuid;
 

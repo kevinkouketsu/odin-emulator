@@ -4,11 +4,9 @@ use crate::{
 };
 use deku::prelude::*;
 use odin_models::{
-    EquipmentSlot, EquipmentSlots, MAX_EQUIPS, character::GuildLevel, item::Item,
+    EquipmentSlot, EquipmentSlots, MAX_AFFECT, MAX_EQUIPS, character::GuildLevel, item::Item,
     position::Position, status::Score,
 };
-
-const MAX_AFFECT: usize = 32;
 
 #[derive(Clone)]
 pub struct CreateMob {
@@ -28,24 +26,14 @@ impl WritableResource for CreateMob {
     type Output = CreateMobRaw;
 
     fn write(self) -> Result<Self::Output, WritableResourceError> {
-        let equip = self
-            .equipments
-            .map_slots(|s, item| VisualEquipRaw::from_equipment(s, item));
-
+        let equip = self.equipments.map_slots(VisualEquipRaw::from_equipment);
         let face_index = self
             .equipments
             .get(EquipmentSlot::Face)
             .map(|item| item.id as i16)
             .unwrap_or(0);
 
-        let guild_level = match self.guild_level {
-            Some(GuildLevel::Participant) => 1,
-            Some(GuildLevel::FirstCommander) => 3,
-            Some(GuildLevel::SecondCommander) => 4,
-            Some(GuildLevel::ThirdCommander) => 5,
-            Some(GuildLevel::Leader) => 9,
-            None => 0,
-        };
+        let guild_level = self.guild_level.map(|g| g.as_raw() as i8).unwrap_or(0);
 
         Ok(CreateMobRaw {
             pos_x: self.position.x as i16,

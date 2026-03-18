@@ -48,6 +48,16 @@ impl GuildLevel {
             _ => None,
         }
     }
+
+    pub fn as_raw(self) -> u16 {
+        match self {
+            GuildLevel::Participant => 1,
+            GuildLevel::FirstCommander => 3,
+            GuildLevel::SecondCommander => 4,
+            GuildLevel::ThirdCommander => 5,
+            GuildLevel::Leader => 9,
+        }
+    }
 }
 
 #[derive(Debug, Error)]
