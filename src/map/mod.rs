@@ -77,6 +77,22 @@ impl Map {
         })
     }
 
+    pub fn force_move_entity(
+        &mut self,
+        id: EntityId,
+        pos: Position,
+    ) -> Result<MoveResult, MapError> {
+        match self.move_entity(id, pos) {
+            Err(MapError::Occupied) => {
+                let free = self
+                    .find_nearest_free(pos)
+                    .ok_or(MapError::NoFreePosition)?;
+                self.move_entity(id, free)
+            }
+            other => other,
+        }
+    }
+
     pub fn move_entity(&mut self, id: EntityId, new_pos: Position) -> Result<MoveResult, MapError> {
         if !Self::is_in_bounds(new_pos) {
             return Err(MapError::OutOfBounds);
@@ -613,6 +629,46 @@ mod tests {
     fn get_position_nonexistent() {
         let map = Map::new();
         assert_eq!(map.get_position(player(1)), None);
+    }
+
+    #[test]
+    fn force_move_to_free_position() {
+        let mut map = Map::new();
+        map.insert(player(1), pos(100, 100)).unwrap();
+        let result = map.force_move_entity(player(1), pos(200, 200)).unwrap();
+        assert_eq!(result.to, pos(200, 200));
+        assert_eq!(map.get_position(player(1)), Some(pos(200, 200)));
+    }
+
+    #[test]
+    fn force_move_to_occupied_finds_nearby() {
+        let mut map = Map::new();
+        map.insert(player(1), pos(100, 100)).unwrap();
+        map.insert(player(2), pos(200, 200)).unwrap();
+        let result = map.force_move_entity(player(1), pos(200, 200)).unwrap();
+        assert_ne!(result.to, pos(200, 200));
+        let dx = (result.to.x as i32 - 200).abs();
+        let dy = (result.to.y as i32 - 200).abs();
+        assert!(dx <= SEARCH_RANGE && dy <= SEARCH_RANGE);
+    }
+
+    #[test]
+    fn force_move_fully_surrounded() {
+        let mut map = Map::new();
+        map.insert(player(1), pos(50, 50)).unwrap();
+        let mut id = 10;
+        let center = pos(100, 100);
+        for dy in -SEARCH_RANGE..=SEARCH_RANGE {
+            for dx in -SEARCH_RANGE..=SEARCH_RANGE {
+                let p = pos((100 + dx) as u16, (100 + dy) as u16);
+                map.insert(player(id), p).unwrap();
+                id += 1;
+            }
+        }
+        assert_eq!(
+            map.force_move_entity(player(1), center),
+            Err(MapError::NoFreePosition)
+        );
     }
 
     #[test]

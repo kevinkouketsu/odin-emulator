@@ -110,15 +110,38 @@ impl UserSession {
                     message => log::error!("Got a message in incorrect state: {:?}", message),
                 }
             }
-            Session::World => match message {
-                Message::ApplyBonus(msg) => {
-                    let entity_id = EntityId::Player(self.client_id);
-                    if let Err(e) = msg.handle(entity_id, world, context) {
-                        log::warn!("ApplyBonus failed: {e:?}");
+            Session::World => {
+                use crate::handlers::gameplay::action::ActionType;
+
+                match message {
+                    Message::ApplyBonus(msg) => {
+                        let entity_id = EntityId::Player(self.client_id);
+                        if let Err(e) = msg.handle(entity_id, world, context) {
+                            log::warn!("ApplyBonus failed: {e:?}");
+                        }
                     }
+                    Message::Action(msg) => {
+                        let entity_id = EntityId::Player(self.client_id);
+                        if let Err(e) = msg.handle(entity_id, world, context, ActionType::Walk) {
+                            log::warn!("Action failed: {e:?}");
+                        }
+                    }
+                    Message::Action2(msg) => {
+                        let entity_id = EntityId::Player(self.client_id);
+                        if let Err(e) = msg.handle(entity_id, world, context, ActionType::Illusion)
+                        {
+                            log::warn!("Action2 failed: {e:?}");
+                        }
+                    }
+                    Message::ActionStop(msg) => {
+                        let entity_id = EntityId::Player(self.client_id);
+                        if let Err(e) = msg.handle(entity_id, world, context, ActionType::Stop) {
+                            log::warn!("ActionStop failed: {e:?}");
+                        }
+                    }
+                    message => log::error!("Unhandled message in World state: {:?}", message),
                 }
-                message => log::error!("Unhandled message in World state: {:?}", message),
-            },
+            }
         }
     }
 

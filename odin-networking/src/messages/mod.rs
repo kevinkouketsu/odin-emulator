@@ -21,6 +21,9 @@ pub enum ClientMessage {
     DeleteCharacter,
     EnterWorld,
     ApplyBonus,
+    Action,
+    Action2,
+    ActionStop,
 }
 impl TryFrom<u16> for ClientMessage {
     type Error = InvalidMessageType;
@@ -33,6 +36,9 @@ impl TryFrom<u16> for ClientMessage {
             0x211 => ClientMessage::DeleteCharacter,
             0x213 => ClientMessage::EnterWorld,
             0x277 => ClientMessage::ApplyBonus,
+            0x36C => ClientMessage::Action,
+            0x368 => ClientMessage::Action2,
+            0x366 => ClientMessage::ActionStop,
             _ => return Err(InvalidMessageType(value)),
         })
     }
@@ -50,6 +56,10 @@ pub enum ServerMessage {
     CreateMob,
     CharacterLogin,
     UpdateEtc,
+    Action,
+    ActionIllusion,
+    ActionStop,
+    RemoveMob,
 }
 impl TryFrom<ServerMessage> for u16 {
     type Error = InvalidMessageType;
@@ -66,6 +76,10 @@ impl TryFrom<ServerMessage> for u16 {
             ServerMessage::CreateMob => 0x364,
             ServerMessage::CharacterLogin => 0x114,
             ServerMessage::UpdateEtc => 0x337,
+            ServerMessage::Action => 0x36C,
+            ServerMessage::ActionIllusion => 0x368,
+            ServerMessage::ActionStop => 0x366,
+            ServerMessage::RemoveMob => 0x165,
         })
     }
 }

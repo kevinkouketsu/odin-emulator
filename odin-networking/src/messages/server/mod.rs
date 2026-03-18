@@ -1,8 +1,10 @@
+pub mod action;
 pub mod character_login;
 pub mod charlist;
 pub mod create_mob;
 pub mod message_panel;
 pub mod numeric_token;
+pub mod remove_mob;
 pub mod update_etc;
 
 use super::ServerMessage;

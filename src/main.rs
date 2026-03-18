@@ -22,6 +22,7 @@ use odin_models::item_data::ItemDatabase;
 use odin_networking::{
     enc_session::EncDecSession, framed_message::HandshakeState, messages::header::Header,
 };
+use session::PacketSender;
 use std::{net::SocketAddr, rc::Rc};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -224,8 +225,18 @@ async fn main() {
                         context.add_session(client_id, session);
                     }
                     GameEvent::Disconnected { client_id } => {
-                        if let Ok(_result) = world.remove_entity(EntityId::Player(client_id)) {
-                            // TODO: Send remove packets to _result.spectators via context.send_to()
+                        if let Ok(result) = world.remove_entity(EntityId::Player(client_id)) {
+                            for spectator in &result.spectators {
+                                if let EntityId::Player(spectator_id) = spectator {
+                                    let _ = context.send_to(
+                                        *spectator_id,
+                                        odin_networking::messages::server::remove_mob::RemoveMob {
+                                            mob_id: client_id as u16,
+                                            remove_type: 1,
+                                        },
+                                    );
+                                }
+                            }
                         }
                         if context.disconnect(client_id).is_err() {
                             log::error!(

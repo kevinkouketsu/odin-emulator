@@ -1,4 +1,4 @@
-use crate::map::{EntityId, InsertResult, Map, MapError, RemoveResult};
+use crate::map::{EntityId, InsertResult, Map, MapError, MoveResult, RemoveResult};
 use crate::score::base::{base_class_stats, master_points, score_points};
 use crate::score::{ComputedScore, StatBuilder};
 use odin_models::character::Character;
@@ -67,6 +67,14 @@ impl World {
         let result = self.map.remove(id)?;
         self.entities.remove(&id);
         Ok(result)
+    }
+
+    pub fn force_move_entity(
+        &mut self,
+        id: EntityId,
+        position: Position,
+    ) -> Result<MoveResult, MapError> {
+        self.map.force_move_entity(id, position)
     }
 
     pub fn get_mob(&self, id: EntityId) -> Option<&Mob> {

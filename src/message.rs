@@ -1,5 +1,5 @@
 use crate::handlers::{
-    gameplay::apply_bonus::ApplyBonus,
+    gameplay::{action::Action, apply_bonus::ApplyBonus},
     login::{
         authentication::{Authentication, AuthenticationError},
         create_character::CreateCharacter,
@@ -15,7 +15,7 @@ use odin_networking::{
     messages::{
         ClientMessage,
         client::{
-            apply_bonus::ApplyBonusRaw, create_character::CreateCharacterRaw,
+            action::ActionRaw, apply_bonus::ApplyBonusRaw, create_character::CreateCharacterRaw,
             delete_character::DeleteCharacterRaw, enter_world::EnterWorldRaw,
             login::LoginMessageRaw, numeric_token::NumericTokenRaw,
         },
@@ -24,8 +24,6 @@ use odin_networking::{
 };
 use thiserror::Error;
 
-/// Represents a client message that can be handled by the server.
-/// Each variant corresponds to a specific message type and its associated handler.
 #[derive(Debug, HandlerDerive)]
 pub enum Message {
     #[raw = "LoginMessageRaw"]
@@ -40,6 +38,12 @@ pub enum Message {
     EnterWorld(EnterWorld),
     #[raw = "ApplyBonusRaw"]
     ApplyBonus(ApplyBonus),
+    #[raw = "ActionRaw"]
+    Action(Action),
+    #[raw = "ActionRaw"]
+    Action2(Action),
+    #[raw = "ActionRaw"]
+    ActionStop(Action),
 }
 
 #[derive(Debug, Error)]
