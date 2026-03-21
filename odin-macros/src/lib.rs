@@ -15,6 +15,7 @@ pub fn writable_resource_derive(input: TokenStream) -> TokenStream {
     let struct_name = input.ident;
     let mut identifier = None;
     for attr in input.attrs {
+        #[allow(clippy::collapsible_if)]
         if attr.path().is_ident("identifier") {
             if let Meta::NameValue(meta_name_value) = attr.meta {
                 if let Expr::Lit(e) = meta_name_value.value {
@@ -74,6 +75,7 @@ pub fn handler_derive(input: TokenStream) -> TokenStream {
             .attrs
             .iter()
             .find_map(|attr| {
+                #[allow(clippy::collapsible_if)]
                 if let Meta::NameValue(meta_name_value) = &attr.meta {
                     if meta_name_value.path.is_ident("raw") {
                         if let Expr::Lit(e) = &meta_name_value.value {

@@ -20,7 +20,7 @@ pub enum Session {
     #[default]
     LoggingIn,
     Charlist {
-        account_charlist: AccountCharlist,
+        account_charlist: Box<AccountCharlist>,
         token: bool,
     },
     World,
@@ -65,7 +65,7 @@ impl UserSession {
                 match msg.handle(&sender, context, repo).await {
                     Ok(account_charlist) => {
                         self.session = Session::Charlist {
-                            account_charlist,
+                            account_charlist: Box::new(account_charlist),
                             token: false,
                         };
                     }

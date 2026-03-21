@@ -82,13 +82,13 @@ impl Authentication {
             return Err(AuthenticationError::Maintenance);
         }
 
-        if let Some(ban) = &account.ban {
-            if ban.expiration > Local::now().naive_local() {
-                return Err(match ban.r#type {
-                    BanType::Analysis => AuthenticationError::AccountInAnalysis(ban.expiration),
-                    BanType::Blocked => AuthenticationError::AccountBlocked(ban.expiration),
-                });
-            }
+        if let Some(ban) = &account.ban
+            && ban.expiration > Local::now().naive_local()
+        {
+            return Err(match ban.r#type {
+                BanType::Analysis => AuthenticationError::AccountInAnalysis(ban.expiration),
+                BanType::Blocked => AuthenticationError::AccountBlocked(ban.expiration),
+            });
         }
 
         let characters = account
