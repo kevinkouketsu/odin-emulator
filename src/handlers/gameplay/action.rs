@@ -53,20 +53,18 @@ impl Action {
             last_pos: self.last_pos,
             move_type: self.move_type,
             move_speed: self.move_speed,
-            command: self.command,
+            route: ActionBroadcastData::route_from_bytes(self.command),
             destiny: move_result.to,
         };
 
         for spectator in move_result.stayed.iter().chain(move_result.entered.iter()) {
-            if let EntityId::Player(client_id) = spectator {
-                match action_type {
-                    ActionType::Walk => sender.send_to(*client_id, ActionWalkBroadcast(data))?,
-                    ActionType::Illusion => {
-                        sender.send_to(*client_id, ActionIllusionBroadcast(data))?
-                    }
-                    ActionType::Stop => sender.send_to(*client_id, ActionStopBroadcast(data))?,
-                };
-            }
+            match action_type {
+                ActionType::Walk => sender.send_to(*spectator, ActionWalkBroadcast(data))?,
+                ActionType::Illusion => {
+                    sender.send_to(*spectator, ActionIllusionBroadcast(data))?
+                }
+                ActionType::Stop => sender.send_to(*spectator, ActionStopBroadcast(data))?,
+            };
         }
 
         let mob = world.get_mob(entity_id).unwrap();
@@ -81,26 +79,21 @@ impl Action {
                 .get_position(*entered)
                 .expect("spectator from map must have a position");
 
-            if let EntityId::Player(client_id) = entered {
-                sender.send_to(*client_id, my_create_mob.clone())?;
-            }
-
-            sender.send_to(entity_id.id(), spectator.to_create_mob(spectator_pos))?;
+            sender.send_to(*entered, my_create_mob.clone())?;
+            sender.send_to(entity_id, spectator.to_create_mob(spectator_pos))?;
         }
 
         for exited in &move_result.exited {
-            if let EntityId::Player(client_id) = exited {
-                sender.send_to(
-                    *client_id,
-                    RemoveMob {
-                        mob_id: entity_id.id() as u16,
-                        remove_type: 0,
-                    },
-                )?;
-            }
+            sender.send_to(
+                *exited,
+                RemoveMob {
+                    mob_id: entity_id.id() as u16,
+                    remove_type: 0,
+                },
+            )?;
 
             sender.send_to(
-                entity_id.id(),
+                entity_id,
                 RemoveMob {
                     mob_id: exited.id() as u16,
                     remove_type: 0,
@@ -108,8 +101,9 @@ impl Action {
             )?;
         }
 
-        let Mob::Player(player) = world.get_mob_mut(entity_id).unwrap();
-        player.last_pos = move_result.to;
+        if let Some(Mob::Player(player)) = world.get_mob_mut(entity_id) {
+            player.last_pos = move_result.to;
+        }
 
         Ok(())
     }
@@ -352,7 +346,9 @@ mod tests {
             .handle(entity_id, &mut world, &sender, ActionType::Walk)
             .unwrap();
 
-        let Mob::Player(player) = world.get_mob(entity_id).unwrap();
+        let Some(Mob::Player(player)) = world.get_mob(entity_id) else {
+            panic!("expected Player");
+        };
         assert_eq!(player.last_pos, Position { x: 2105, y: 2105 });
     }
 }

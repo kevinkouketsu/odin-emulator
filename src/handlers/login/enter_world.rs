@@ -37,22 +37,26 @@ impl EnterWorld {
         world.recalculate_score(entity_id);
 
         {
-            let Mob::Player(player) = world.get_mob_mut(entity_id).unwrap();
+            let Some(Mob::Player(player)) = world.get_mob_mut(entity_id) else {
+                return Err(EnterWorldError::CharacterNotFound);
+            };
             player.calculate_bonus_points();
         }
 
         let position = insert_result.position;
 
         {
-            let Mob::Player(player) = world.get_mob(entity_id).unwrap();
-            sender.send_to(client_id, player.to_character_login(position))?;
+            let Some(Mob::Player(player)) = world.get_mob(entity_id) else {
+                return Err(EnterWorldError::CharacterNotFound);
+            };
+            sender.send_to(entity_id, player.to_character_login(position))?;
         }
 
         world.broadcast_update_score(entity_id, sender)?;
 
         let mob = world.get_mob(entity_id).unwrap();
         let my_create_mob = mob.to_create_mob(position);
-        sender.send_to(client_id, my_create_mob.clone())?;
+        sender.send_to(entity_id, my_create_mob.clone())?;
 
         for spectator_entity in insert_result.spectators {
             let Some(spectator) = world.get_mob(spectator_entity) else {
@@ -64,8 +68,8 @@ impl EnterWorld {
                 .get_position(spectator_entity)
                 .expect("spectator from map must have a position");
 
-            sender.send_to(client_id, spectator.to_create_mob(spectator_pos))?;
-            sender.send_to(spectator_entity.id(), my_create_mob.clone())?;
+            sender.send_to(entity_id, spectator.to_create_mob(spectator_pos))?;
+            sender.send_to(spectator_entity, my_create_mob.clone())?;
         }
 
         Ok(())
@@ -395,6 +399,55 @@ mod tests {
             pos,
             Position { x: 2100, y: 2100 },
             "should be placed nearby, not at the occupied position"
+        );
+    }
+
+    #[tokio::test]
+    async fn enter_world_with_npc_spectator_succeeds() {
+        use crate::npc::Npc;
+        use crate::npc::movement::{MovementBehavior, MovementState};
+        use odin_models::npc_mob::NpcMob;
+
+        let repository = TestAccountRepository::new().await;
+        let sender = MockPacketSender::default();
+        let mut world = World::default();
+
+        let npc_id = EntityId::Mob(1000);
+        let npc = Npc::new(
+            npc_id,
+            NpcMob {
+                name: "Guard".to_string(),
+                ..Default::default()
+            },
+            MovementState::new(MovementBehavior::Stationary, 1),
+        );
+        world
+            .add_npc(npc_id, npc, Position { x: 2105, y: 2105 })
+            .unwrap();
+
+        let client_id = 1;
+        let account_id =
+            setup_account_with_character(&repository, Position { x: 2100, y: 2100 }).await;
+
+        enter_world(0)
+            .handle(
+                account_id,
+                client_id,
+                repository.account_repository(),
+                &sender,
+                &mut world,
+            )
+            .await
+            .unwrap();
+
+        let player_messages = sender.messages_for(EntityId::Player(client_id));
+        let create_mob_count = player_messages
+            .iter()
+            .filter(|m| m.identifier == ServerMessage::CreateMob)
+            .count();
+        assert_eq!(
+            create_mob_count, 2,
+            "player should receive CreateMob for self + NPC spectator"
         );
     }
 }

@@ -204,12 +204,12 @@ pub mod tests {
     impl PacketSender for MockPacketSender {
         fn send_to<W: WritableResource>(
             &self,
-            client_id: usize,
+            target: EntityId,
             message: W,
         ) -> Result<(), SessionError> {
             let bytes: Vec<u8> = message.write()?.to_bytes()?;
             self.messages.try_write().unwrap().push(SentPacket {
-                client_id,
+                client_id: target.id(),
                 identifier: W::IDENTIFIER,
                 bytes,
             });

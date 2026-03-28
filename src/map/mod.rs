@@ -1,3 +1,4 @@
+use odin_models::height_map::HeightMap;
 use odin_models::position::Position;
 use std::collections::HashMap;
 
@@ -9,6 +10,7 @@ const SEARCH_RANGE: i32 = 5;
 pub struct Map {
     grid: HashMap<(u16, u16), EntityId>,
     positions: HashMap<EntityId, Position>,
+    height_map: Option<HeightMap>,
 }
 
 impl Map {
@@ -16,6 +18,15 @@ impl Map {
         Self {
             grid: HashMap::new(),
             positions: HashMap::new(),
+            height_map: None,
+        }
+    }
+
+    pub fn with_height_map(height_map: HeightMap) -> Self {
+        Self {
+            grid: HashMap::new(),
+            positions: HashMap::new(),
+            height_map: Some(height_map),
         }
     }
 
@@ -207,8 +218,24 @@ impl Map {
         pos.x < MAP_SIZE && pos.y < MAP_SIZE
     }
 
-    fn is_walkable(&self, _pos: Position) -> bool {
-        true
+    fn is_walkable(&self, pos: Position) -> bool {
+        match &self.height_map {
+            Some(hm) => !hm.is_blocked(pos.x, pos.y),
+            None => true,
+        }
+    }
+
+    pub fn can_step(&self, from: Position, to: Position) -> bool {
+        if !Self::is_in_bounds(to) {
+            return false;
+        }
+        if self.grid.contains_key(&(to.x, to.y)) {
+            return false;
+        }
+        match &self.height_map {
+            Some(hm) => hm.can_walk(from.x, from.y, to.x, to.y),
+            None => true,
+        }
     }
 }
 
@@ -687,5 +714,71 @@ mod tests {
 
         map.remove(mob(1)).unwrap();
         assert_eq!(map.get_position(mob(1)), None);
+    }
+
+    #[test]
+    fn is_walkable_without_height_map() {
+        let map = Map::new();
+        assert!(map.is_walkable(pos(0, 0)));
+        assert!(map.is_walkable(pos(100, 200)));
+        assert!(map.is_walkable(pos(4095, 4095)));
+    }
+
+    #[test]
+    fn is_walkable_with_height_map_blocked() {
+        let mut hm = HeightMap::empty(4096, 4096);
+        hm.set(50, 50, 127);
+        let map = Map::with_height_map(hm);
+        assert!(!map.is_walkable(pos(50, 50)));
+        assert!(map.is_walkable(pos(51, 50)));
+    }
+
+    #[test]
+    fn can_step_to_empty_flat() {
+        let hm = HeightMap::empty(4096, 4096);
+        let map = Map::with_height_map(hm);
+        assert!(map.can_step(pos(100, 100), pos(101, 100)));
+    }
+
+    #[test]
+    fn can_step_to_occupied() {
+        let mut map = Map::new();
+        map.insert(player(1), pos(100, 100)).unwrap();
+        assert!(!map.can_step(pos(99, 100), pos(100, 100)));
+    }
+
+    #[test]
+    fn can_step_to_blocked() {
+        let mut hm = HeightMap::empty(4096, 4096);
+        hm.set(101, 100, 127);
+        let map = Map::with_height_map(hm);
+        assert!(!map.can_step(pos(100, 100), pos(101, 100)));
+    }
+
+    #[test]
+    fn can_step_steep() {
+        let mut hm = HeightMap::empty(4096, 4096);
+        hm.set(100, 100, 10);
+        hm.set(101, 100, 20);
+        let map = Map::with_height_map(hm);
+        assert!(!map.can_step(pos(100, 100), pos(101, 100)));
+    }
+
+    #[test]
+    fn can_step_out_of_bounds() {
+        let map = Map::new();
+        assert!(!map.can_step(pos(4095, 4095), pos(4096, 4095)));
+    }
+
+    #[test]
+    fn force_insert_avoids_blocked_cells() {
+        let mut hm = HeightMap::empty(4096, 4096);
+        hm.set(100, 100, 127);
+        let mut map = Map::with_height_map(hm);
+        let result = map.force_insert(player(1), pos(100, 100)).unwrap();
+        assert_ne!(result.position, pos(100, 100));
+        let dx = (result.position.x as i32 - 100).abs();
+        let dy = (result.position.y as i32 - 100).abs();
+        assert!(dx <= SEARCH_RANGE && dy <= SEARCH_RANGE);
     }
 }

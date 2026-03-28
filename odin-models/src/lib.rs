@@ -1,11 +1,14 @@
 pub mod account;
 pub mod account_charlist;
 pub mod character;
+pub mod direction;
 pub mod effect;
+pub mod height_map;
 pub mod item;
 pub mod item_data;
 pub mod item_slots;
 pub mod nickname;
+pub mod npc_mob;
 pub mod position;
 pub mod status;
 pub mod storage;

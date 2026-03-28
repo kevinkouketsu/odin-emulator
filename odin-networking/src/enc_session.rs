@@ -3,23 +3,26 @@ use bytes::Bytes;
 use deku::prelude::*;
 use rand::Rng;
 use std::rc::Rc;
+use std::time::Instant;
 use thiserror::Error;
 
 const KEYTABLE_LENGTH: usize = 512;
 const HALF_KEYTABLE_LENGTH: usize = 255;
 
-/// A session for encrypting and decrypting network messages.
-/// Uses a shared keytable for encryption/decryption and maintains a session ID.
 #[derive(Debug, Clone)]
 pub struct EncDecSession {
     keytable: Rc<[u8; KEYTABLE_LENGTH]>,
     id: u16,
+    start_time: Instant,
 }
 
 impl EncDecSession {
-    /// Creates a new encryption/decryption session with the given ID and keytable.
-    pub fn new(id: u16, keytable: Rc<[u8; KEYTABLE_LENGTH]>) -> Self {
-        Self { keytable, id }
+    pub fn new(id: u16, keytable: Rc<[u8; KEYTABLE_LENGTH]>, start_time: Instant) -> Self {
+        Self {
+            keytable,
+            id,
+            start_time,
+        }
     }
 
     /// Encrypts a message using the session's keytable.
@@ -34,7 +37,7 @@ impl EncDecSession {
             checksum: 0,
             typ: u16::try_from(R::IDENTIFIER).expect("Message identifier must be valid"),
             id: client_id,
-            tick: 0,
+            tick: self.start_time.elapsed().as_millis() as u32,
         };
 
         let mut buffer: Vec<u8> = header.to_bytes()?;
@@ -138,7 +141,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         let mut array = [0u8; KEYTABLE_LENGTH];
         rng.fill(&mut array);
-        EncDecSession::new(0, Rc::new(array))
+        EncDecSession::new(0, Rc::new(array), Instant::now())
     }
 
     #[test]
@@ -180,7 +183,7 @@ mod tests {
 
     #[test]
     fn preserves_client_id_during_encryption() {
-        let enc_session = EncDecSession::new(255, Rc::new([0u8; KEYTABLE_LENGTH]));
+        let enc_session = EncDecSession::new(255, Rc::new([0u8; KEYTABLE_LENGTH]), Instant::now());
         let mut message = enc_session
             .encrypt(PayloadTest { a: 1, b: 2 })
             .unwrap()
@@ -192,7 +195,7 @@ mod tests {
 
     #[test]
     fn preserves_message_identifier_during_encryption() {
-        let enc_session = EncDecSession::new(255, Rc::new([0u8; KEYTABLE_LENGTH]));
+        let enc_session = EncDecSession::new(255, Rc::new([0u8; KEYTABLE_LENGTH]), Instant::now());
         let mut message = enc_session
             .encrypt(PayloadTest { a: 1, b: 2 })
             .unwrap()
@@ -223,7 +226,7 @@ mod tests {
 
     #[test]
     fn allows_payload_to_override_client_id() {
-        let enc_session = EncDecSession::new(255, Rc::new([0u8; KEYTABLE_LENGTH]));
+        let enc_session = EncDecSession::new(255, Rc::new([0u8; KEYTABLE_LENGTH]), Instant::now());
         let mut message = enc_session
             .encrypt(PayloadWithClientId(1))
             .unwrap()

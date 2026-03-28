@@ -1,3 +1,4 @@
+use crate::map::EntityId;
 use deku::prelude::*;
 use odin_networking::{WritableResource, WritableResourceError, enc_session::EncDecError};
 use thiserror::Error;
@@ -24,7 +25,7 @@ pub enum SessionError {
 pub trait PacketSender {
     fn send_to<W: WritableResource>(
         &self,
-        client_id: usize,
+        target: EntityId,
         message: W,
     ) -> Result<(), SessionError>;
 }

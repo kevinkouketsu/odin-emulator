@@ -1,4 +1,5 @@
 use crate::map::{EntityId, InsertResult, Map, MapError, MoveResult, RemoveResult};
+use crate::npc::Npc;
 use crate::score::base::{base_class_stats, master_points, score_points};
 use crate::score::{ComputedScore, StatBuilder};
 use odin_models::character::Character;
@@ -49,6 +50,7 @@ impl World {
                 player.computed = new_computed;
                 changed
             }
+            Mob::Npc(_) => false,
         }
     }
 
@@ -77,12 +79,51 @@ impl World {
         self.map.force_move_entity(id, position)
     }
 
+    pub fn add_npc(
+        &mut self,
+        entity_id: EntityId,
+        npc: Npc,
+        position: Position,
+    ) -> Result<InsertResult, MapError> {
+        let result = self.map.force_insert(entity_id, position)?;
+        self.entities.insert(entity_id, Mob::Npc(npc));
+        Ok(result)
+    }
+
     pub fn get_mob(&self, id: EntityId) -> Option<&Mob> {
         self.entities.get(&id)
     }
 
     pub fn get_mob_mut(&mut self, id: EntityId) -> Option<&mut Mob> {
         self.entities.get_mut(&id)
+    }
+
+    pub fn get_npc(&self, id: EntityId) -> Option<&Npc> {
+        match self.entities.get(&id) {
+            Some(Mob::Npc(npc)) => Some(npc),
+            _ => None,
+        }
+    }
+
+    pub fn get_npc_mut(&mut self, id: EntityId) -> Option<&mut Npc> {
+        match self.entities.get_mut(&id) {
+            Some(Mob::Npc(npc)) => Some(npc),
+            _ => None,
+        }
+    }
+
+    pub fn npc_ids(&self) -> Vec<EntityId> {
+        self.entities
+            .iter()
+            .filter_map(|(id, mob)| match mob {
+                Mob::Npc(_) => Some(*id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub fn entity_exists(&self, id: EntityId) -> bool {
+        self.entities.contains_key(&id)
     }
 
     pub fn map(&self) -> &Map {
@@ -102,17 +143,20 @@ impl Default for World {
 
 pub enum Mob {
     Player(Player),
+    Npc(Npc),
 }
 impl Mob {
     pub fn entity_id(&self) -> EntityId {
         match self {
             Mob::Player(player) => player.entity_id(),
+            Mob::Npc(npc) => npc.entity_id(),
         }
     }
 
     pub fn revive(&mut self) -> bool {
         match self {
             Mob::Player(player) => player.revive(),
+            Mob::Npc(_) => false,
         }
     }
 }
@@ -208,5 +252,121 @@ impl Player {
         let total_master = master_points(self.score.level, self.evolution);
         let spent_master: i32 = self.score.specials.iter().map(|&s| s as i32).sum();
         self.special_bonus = (total_master - spent_master) as i16;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::npc::Npc;
+    use crate::npc::movement::{MovementBehavior, MovementState};
+    use odin_models::npc_mob::NpcMob;
+
+    fn make_npc(id: usize) -> (EntityId, Npc) {
+        let entity_id = EntityId::Mob(id);
+        let template = NpcMob {
+            name: format!("TestNpc{}", id),
+            ..Default::default()
+        };
+        let movement = MovementState::new(MovementBehavior::Stationary, 1);
+        (entity_id, Npc::new(entity_id, template, movement))
+    }
+
+    fn pos(x: u16, y: u16) -> Position {
+        Position { x, y }
+    }
+
+    #[test]
+    fn add_npc_to_world() {
+        let mut world = World::default();
+        let (id, npc) = make_npc(1000);
+        let result = world.add_npc(id, npc, pos(2100, 2100));
+        assert!(result.is_ok());
+        assert!(world.entity_exists(id));
+    }
+
+    #[test]
+    fn get_npc_returns_npc() {
+        let mut world = World::default();
+        let (id, npc) = make_npc(1000);
+        world.add_npc(id, npc, pos(2100, 2100)).unwrap();
+        assert!(world.get_npc(id).is_some());
+    }
+
+    #[test]
+    fn get_npc_returns_none_for_player() {
+        let mut world = World::default();
+        let entity_id = EntityId::Player(1);
+        let player = Player::from_character(
+            entity_id,
+            Character {
+                name: "Test".to_string(),
+                ..Default::default()
+            },
+        );
+        world
+            .add_player(entity_id, player, pos(2100, 2100))
+            .unwrap();
+        assert!(world.get_npc(entity_id).is_none());
+    }
+
+    #[test]
+    fn npc_ids_returns_only_mobs() {
+        let mut world = World::default();
+        let (npc_id, npc) = make_npc(1000);
+        world.add_npc(npc_id, npc, pos(2100, 2100)).unwrap();
+
+        let player_id = EntityId::Player(1);
+        let player = Player::from_character(
+            player_id,
+            Character {
+                name: "Test".to_string(),
+                ..Default::default()
+            },
+        );
+        world
+            .add_player(player_id, player, pos(2110, 2110))
+            .unwrap();
+
+        let ids = world.npc_ids();
+        assert!(ids.contains(&npc_id));
+        assert!(!ids.contains(&player_id));
+    }
+
+    #[test]
+    fn remove_npc_from_world() {
+        let mut world = World::default();
+        let (id, npc) = make_npc(1000);
+        world.add_npc(id, npc, pos(2100, 2100)).unwrap();
+        world.remove_entity(id).unwrap();
+        assert!(!world.entity_exists(id));
+    }
+
+    #[test]
+    fn npc_shows_as_spectator() {
+        let mut world = World::default();
+        let (npc_id, npc) = make_npc(1000);
+        world.add_npc(npc_id, npc, pos(2100, 2100)).unwrap();
+
+        let player_id = EntityId::Player(1);
+        let player = Player::from_character(
+            player_id,
+            Character {
+                name: "Test".to_string(),
+                ..Default::default()
+            },
+        );
+        let result = world
+            .add_player(player_id, player, pos(2105, 2105))
+            .unwrap();
+        assert!(result.spectators.contains(&npc_id));
+    }
+
+    #[test]
+    fn recalculate_score_noop_for_npc() {
+        let mut world = World::default();
+        let (id, npc) = make_npc(1000);
+        world.add_npc(id, npc, pos(2100, 2100)).unwrap();
+        assert!(!world.recalculate_score(id));
     }
 }

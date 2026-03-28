@@ -4,6 +4,7 @@ pub mod game_server_context;
 pub mod handlers;
 pub mod map;
 pub mod message;
+pub mod npc;
 pub mod packets;
 pub mod score;
 pub mod session;
@@ -23,7 +24,7 @@ use odin_networking::{
     enc_session::EncDecSession, framed_message::HandshakeState, messages::header::Header,
 };
 use session::PacketSender;
-use std::{net::SocketAddr, rc::Rc};
+use std::{net::SocketAddr, rc::Rc, time::Instant};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
@@ -118,9 +119,16 @@ async fn main() {
     log::info!("Listening on {}", cli.addr);
 
     let keytable = Rc::new(KEYTABLE);
+    let server_start = Instant::now();
+    let mut npc_ticker = npc::tick::NpcTicker::new();
+    let pathfinder = npc::pathfinding::GreedyPathfinder;
+    let mut tick_interval = tokio::time::interval(npc::tick::NpcTicker::tick_interval());
 
     loop {
         tokio::select! {
+            _ = tick_interval.tick() => {
+                npc_ticker.tick(&mut world, &pathfinder, &context);
+            }
             Ok((stream, addr)) = listener.accept() => {
                 let client_id = match context.allocate_client_id() {
                     Some(id) => id,
@@ -164,7 +172,7 @@ async fn main() {
                     }
                 });
 
-                let encdec = EncDecSession::new(client_id as u16, keytable.clone());
+                let encdec = EncDecSession::new(client_id as u16, keytable.clone(), server_start);
                 context.add_sender(
                     client_id,
                     SenderSession::new(encdec.clone(), writer_tx.clone()),
@@ -227,15 +235,13 @@ async fn main() {
                     GameEvent::Disconnected { client_id } => {
                         if let Ok(result) = world.remove_entity(EntityId::Player(client_id)) {
                             for spectator in &result.spectators {
-                                if let EntityId::Player(spectator_id) = spectator {
-                                    let _ = context.send_to(
-                                        *spectator_id,
-                                        odin_networking::messages::server::remove_mob::RemoveMob {
-                                            mob_id: client_id as u16,
-                                            remove_type: 1,
-                                        },
-                                    );
-                                }
+                                let _ = context.send_to(
+                                    *spectator,
+                                    odin_networking::messages::server::remove_mob::RemoveMob {
+                                        mob_id: client_id as u16,
+                                        remove_type: 1,
+                                    },
+                                );
                             }
                         }
                         if context.disconnect(client_id).is_err() {

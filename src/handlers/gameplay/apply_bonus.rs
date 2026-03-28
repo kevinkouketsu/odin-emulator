@@ -47,8 +47,10 @@ impl ApplyBonus {
         world.recalculate_score(entity_id);
 
         {
-            let Mob::Player(player) = world.get_mob(entity_id).unwrap();
-            sender.send_to(entity_id.id(), player.to_update_etc())?;
+            let Some(Mob::Player(player)) = world.get_mob(entity_id) else {
+                return Ok(());
+            };
+            sender.send_to(entity_id, player.to_update_etc())?;
         }
         world.broadcast_update_score(entity_id, sender)?;
         Ok(())
@@ -464,7 +466,9 @@ mod tests {
             .unwrap();
         world.recalculate_score(entity_id);
         {
-            let Mob::Player(player) = world.get_mob_mut(entity_id).unwrap();
+            let Some(Mob::Player(player)) = world.get_mob_mut(entity_id) else {
+                panic!("expected Player");
+            };
             player.calculate_bonus_points();
         }
 
@@ -473,7 +477,9 @@ mod tests {
         });
         bonus.handle(entity_id, &mut world, &sender).unwrap();
 
-        let Mob::Player(player) = world.get_mob(entity_id).unwrap();
+        let Some(Mob::Player(player)) = world.get_mob(entity_id) else {
+            panic!("expected Player");
+        };
         assert_eq!(player.score.strength, 1);
         assert_eq!(player.computed.score.strength, 1);
         // Level 10 TK: score_points=50, base class stats (8+4+7+6)=25

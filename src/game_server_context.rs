@@ -1,6 +1,7 @@
 use crate::{
     client_id_manager::{ClientIdManager, ClientIdManagerError},
     configuration::{CliVer, Configuration, ServerState},
+    map::EntityId,
     session::{PacketSender, SessionError, SessionTrait},
     user_session::{SenderSession, UserSession},
 };
@@ -74,9 +75,12 @@ where
 {
     fn send_to<W: WritableResource>(
         &self,
-        client_id: usize,
+        target: EntityId,
         message: W,
     ) -> Result<(), SessionError> {
+        let EntityId::Player(client_id) = target else {
+            return Ok(());
+        };
         let sender = self
             .senders
             .get(&client_id)

@@ -58,12 +58,10 @@ impl BroadcastUpdateScore for World {
         };
 
         let spectators = self.map().get_spectators(position, entity_id);
-        sender.send_to(entity_id.id(), player.to_update_score())?;
+        sender.send_to(entity_id, player.to_update_score())?;
 
         for spectator in &spectators {
-            if let EntityId::Player(client_id) = spectator {
-                sender.send_to(*client_id, player.to_update_score())?;
-            }
+            sender.send_to(*spectator, player.to_update_score())?;
         }
 
         Ok(())

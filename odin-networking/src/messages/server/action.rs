@@ -2,7 +2,9 @@ use crate::{
     WritableResource, WritableResourceError,
     messages::{ServerMessage, client::action::ActionRaw, common::PositionRaw},
 };
-use odin_models::position::Position;
+use odin_models::{direction::Direction, position::Position};
+
+pub const MAX_ROUTE: usize = 24;
 
 #[derive(Clone, Copy)]
 pub struct ActionBroadcastData {
@@ -10,12 +12,36 @@ pub struct ActionBroadcastData {
     pub last_pos: Position,
     pub move_type: u32,
     pub move_speed: u32,
-    pub command: [u8; 24],
+    pub route: [Option<Direction>; MAX_ROUTE],
     pub destiny: Position,
 }
 
 impl ActionBroadcastData {
+    pub fn route_from_bytes(bytes: [u8; MAX_ROUTE]) -> [Option<Direction>; MAX_ROUTE] {
+        let mut route = [None; MAX_ROUTE];
+        for (i, &b) in bytes.iter().enumerate() {
+            if b >= b'1' && b <= b'9' {
+                route[i] = Direction::try_from(b - b'0').ok();
+            }
+        }
+        route
+    }
+
+    pub fn route_from_directions(dirs: &[Direction]) -> [Option<Direction>; MAX_ROUTE] {
+        let mut route = [None; MAX_ROUTE];
+        for (i, dir) in dirs.iter().enumerate().take(MAX_ROUTE) {
+            route[i] = Some(*dir);
+        }
+        route
+    }
+
     fn to_raw(self) -> ActionRaw {
+        let mut command = [0u8; MAX_ROUTE];
+        for (i, dir) in self.route.iter().enumerate() {
+            if let Some(d) = dir {
+                command[i] = d.to_route_byte();
+            }
+        }
         ActionRaw {
             last_pos: PositionRaw {
                 x: self.last_pos.x,
@@ -23,7 +49,7 @@ impl ActionBroadcastData {
             },
             move_type: self.move_type,
             move_speed: self.move_speed,
-            command: self.command,
+            command,
             destiny: PositionRaw {
                 x: self.destiny.x,
                 y: self.destiny.y,
