@@ -14,7 +14,7 @@ pub mod world;
 use bytes::Bytes;
 use clap::Parser;
 use client_id_manager::ClientIdManager;
-use deku::prelude::*;
+use deku::DekuContainerRead;
 use game_server_context::GameServerContext;
 use map::EntityId;
 use message::{Message, MessageError};
@@ -24,7 +24,7 @@ use odin_networking::{
     enc_session::EncDecSession, framed_message::HandshakeState, messages::header::Header,
 };
 use session::PacketSender;
-use std::{net::SocketAddr, rc::Rc, time::Instant};
+use std::{net::SocketAddr, path::Path, rc::Rc, time::Instant};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
@@ -114,6 +114,29 @@ async fn main() {
     };
     let mut world = World::new(item_db);
 
+    let mob_templates = match npc::loading::load_mob_templates(Path::new("data/mobs")) {
+        Ok(t) => {
+            log::info!("Loaded {} mob templates", t.len());
+            t
+        }
+        Err(e) => {
+            log::warn!("Failed to load mob templates: {e}, using empty");
+            std::collections::HashMap::new()
+        }
+    };
+    let spawn_configs =
+        match npc::loading::load_spawn_groups(Path::new("data/spawns"), &mob_templates) {
+            Ok(c) => {
+                log::info!("Loaded {} spawn groups", c.len());
+                c
+            }
+            Err(e) => {
+                log::warn!("Failed to load spawn groups: {e}, using empty");
+                Vec::new()
+            }
+        };
+    let mut spawn_manager = npc::spawn_manager::SpawnManager::new(spawn_configs);
+
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<GameEvent>();
     let listener = TcpListener::bind(cli.addr).await.unwrap();
     log::info!("Listening on {}", cli.addr);
@@ -126,135 +149,141 @@ async fn main() {
 
     loop {
         tokio::select! {
-            _ = tick_interval.tick() => {
-                npc_ticker.tick(&mut world, &pathfinder, &context);
-            }
-            Ok((stream, addr)) = listener.accept() => {
-                let client_id = match context.allocate_client_id() {
-                    Some(id) => id,
-                    None => {
-                        log::error!("Could not find a client id");
-                        continue;
-                    }
-                };
+                  _ = tick_interval.tick() => {
+                      let start = std::time::Instant::now();
+                      let despawned = npc_ticker.tick(&mut world, &pathfinder, &context);
+                      for id in despawned {
+                          spawn_manager.release_mob_id(id);
+                      }
+                      spawn_manager.tick(&mut world, &context);let elapsed = start.elapsed();
+    log::info!("NPC tick: {elapsed:?}");
+                  }
+                  Ok((stream, addr)) = listener.accept() => {
+                      let client_id = match context.allocate_client_id() {
+                          Some(id) => id,
+                          None => {
+                              log::error!("Could not find a client id");
+                              continue;
+                          }
+                      };
 
-                let (writer_tx, mut writer_rx) = mpsc::unbounded_channel::<Bytes>();
-                let event_tx_clone = event_tx.clone();
-                let (mut read_half, mut write_half) = stream.into_split();
+                      let (writer_tx, mut writer_rx) = mpsc::unbounded_channel::<Bytes>();
+                      let event_tx_clone = event_tx.clone();
+                      let (mut read_half, mut write_half) = stream.into_split();
 
-                tokio::spawn(async move {
-                    while let Some(data) = writer_rx.recv().await {
-                        if write_half.write_all(&data).await.is_err() {
-                            break;
-                        }
-                    }
-                });
+                      tokio::spawn(async move {
+                          while let Some(data) = writer_rx.recv().await {
+                              if write_half.write_all(&data).await.is_err() {
+                                  break;
+                              }
+                          }
+                      });
 
-                tokio::spawn(async move {
-                    let mut handshake = HandshakeState::default();
-                    let mut buf = [0u8; 4096];
+                      tokio::spawn(async move {
+                          let mut handshake = HandshakeState::default();
+                          let mut buf = [0u8; 4096];
 
-                    loop {
-                        match read_half.read(&mut buf).await {
-                            Ok(0) | Err(_) => {
-                                let _ = event_tx_clone.send(GameEvent::Disconnected { client_id });
-                                break;
-                            }
-                            Ok(n) => {
-                                handshake.update(&buf[..n]);
-                                while let Some(msg) = handshake.next_message() {
-                                    if event_tx_clone.send(GameEvent::Message { client_id, data: msg }).is_err() {
-                                        return;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
+                          loop {
+                              match read_half.read(&mut buf).await {
+                                  Ok(0) | Err(_) => {
+                                      let _ = event_tx_clone.send(GameEvent::Disconnected { client_id });
+                                      break;
+                                  }
+                                  Ok(n) => {
+                                      handshake.update(&buf[..n]);
+                                      while let Some(msg) = handshake.next_message() {
+                                          if event_tx_clone.send(GameEvent::Message { client_id, data: msg }).is_err() {
+                                              return;
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      });
 
-                let encdec = EncDecSession::new(client_id as u16, keytable.clone(), server_start);
-                context.add_sender(
-                    client_id,
-                    SenderSession::new(encdec.clone(), writer_tx.clone()),
-                );
-                context.add_session(
-                    client_id,
-                    UserSession::new(client_id, writer_tx.clone(), encdec),
-                );
+                      let encdec = EncDecSession::new(client_id as u16, keytable.clone(), server_start);
+                      context.add_sender(
+                          client_id,
+                          SenderSession::new(encdec.clone(), writer_tx.clone()),
+                      );
+                      context.add_session(
+                          client_id,
+                          UserSession::new(client_id, writer_tx.clone(), encdec),
+                      );
 
-                log::info!("Player {} connected. ClientId: {}", addr, client_id);
-            }
+                      log::info!("Player {} connected. ClientId: {}", addr, client_id);
+                  }
 
-            Some(event) = event_rx.recv() => {
-                match event {
-                    GameEvent::Connected { .. } => {}
-                    GameEvent::Message { client_id, mut data } => {
-                        let Some(mut session) = context.take_session(client_id) else {
-                            log::error!("Received a message from unknown client {}", client_id);
-                            continue;
-                        };
+                  Some(event) = event_rx.recv() => {
+                      match event {
+                          GameEvent::Connected { .. } => {}
+                          GameEvent::Message { client_id, mut data } => {
+                              let Some(mut session) = context.take_session(client_id) else {
+                                  log::error!("Received a message from unknown client {}", client_id);
+                                  continue;
+                              };
 
-                        if let Err(e) = session.decrypt(&mut data) {
-                            log::error!("Fail to decrypt packet: {:?}", e);
-                            context.add_session(client_id, session);
-                            continue;
-                        }
+                              if let Err(e) = session.decrypt(&mut data) {
+                                  log::error!("Fail to decrypt packet: {:?}", e);
+                                  context.add_session(client_id, session);
+                                  continue;
+                              }
 
-                        let (rest, header) = Header::from_bytes((&data, 0))
-                            .expect("Could not parse header this is very strange");
+                              let (rest, header) = Header::from_bytes((&data, 0))
+                                  .expect("Could not parse header this is very strange");
 
-                        let message = match Message::try_from((rest, header)) {
-                            Ok(message) => message,
-                            Err(MessageError::NotImplemented(header)) => {
-                                log::error!(
-                                    "Received a packet that is not implemented yet: {:?}",
-                                    header
-                                );
-                                context.add_session(client_id, session);
-                                continue;
-                            }
-                            Err(MessageError::NotRecognized(header)) => {
-                                log::error!(
-                                    "Received a packet that has not been identified: {:?}",
-                                    header
-                                );
-                                context.add_session(client_id, session);
-                                continue;
-                            }
-                            Err(err) => {
-                                log::error!("Invalid packet received: {:?}", err);
-                                context.add_session(client_id, session);
-                                continue;
-                            }
-                        };
+                              let message = match Message::try_from((rest, header)) {
+                                  Ok(message) => message,
+                                  Err(MessageError::NotImplemented(header)) => {
+                                      log::error!(
+                                          "Received a packet that is not implemented yet: {:?}",
+                                          header
+                                      );
+                                      context.add_session(client_id, session);
+                                      continue;
+                                  }
+                                  Err(MessageError::NotRecognized(header)) => {
+                                      log::error!(
+                                          "Received a packet that has not been identified: {:?}",
+                                          header
+                                      );
+                                      context.add_session(client_id, session);
+                                      continue;
+                                  }
+                                  Err(err) => {
+                                      log::error!("Invalid packet received: {:?}", err);
+                                      context.add_session(client_id, session);
+                                      continue;
+                                  }
+                              };
 
-                        log::info!("Received packet {:?} from {}", message, client_id);
-                        session.handle(&context, &mut world, message).await;
-                        context.add_session(client_id, session);
-                    }
-                    GameEvent::Disconnected { client_id } => {
-                        if let Ok(result) = world.remove_entity(EntityId::Player(client_id)) {
-                            for spectator in &result.spectators {
-                                let _ = context.send_to(
-                                    *spectator,
-                                    odin_networking::messages::server::remove_mob::RemoveMob {
-                                        mob_id: client_id as u16,
-                                        remove_type: 1,
-                                    },
-                                );
-                            }
-                        }
-                        if context.disconnect(client_id).is_err() {
-                            log::error!(
-                                "Received a disconnect event from unknown ClientId: {}",
-                                client_id
-                            );
-                        } else {
-                            log::info!("Player disconnected. ClientId: {}", client_id);
-                        }
-                    }
-                }
-            }
-        }
+                              log::info!("Received packet {:?} from {}", message, client_id);
+                              session.handle(&context, &mut world, message).await;
+                              context.add_session(client_id, session);
+                          }
+                          GameEvent::Disconnected { client_id } => {
+                              if let Ok(result) = world.remove_entity(EntityId::Player(client_id)) {
+                                  for spectator in &result.spectators {
+                                      let _ = context.send_to(
+                                          *spectator,
+                                          odin_networking::messages::server::remove_mob::RemoveMob {
+                                              mob_id: client_id as u16,
+                                              remove_type: 1,
+                                          },
+                                      );
+                                  }
+                              }
+                              if context.disconnect(client_id).is_err() {
+                                  log::error!(
+                                      "Received a disconnect event from unknown ClientId: {}",
+                                      client_id
+                                  );
+                              } else {
+                                  log::info!("Player disconnected. ClientId: {}", client_id);
+                              }
+                          }
+                      }
+                  }
+              }
     }
 }

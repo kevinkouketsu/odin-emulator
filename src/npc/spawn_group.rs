@@ -107,12 +107,15 @@ impl Formation {
 pub enum RouteType {
     Stationary,
     Random { radius: u16 },
-    Patrol,
-    PatrolDisappear,
+    WalkToEnd,
+    WalkAndDespawn,
+    PingPong,
+    PingPongDespawn,
+    Loop,
 }
 
 impl RouteType {
-    pub fn to_behavior(self, waypoints: Vec<Waypoint>) -> MovementBehavior {
+    pub fn to_behavior(&self, waypoints: Vec<Waypoint>) -> MovementBehavior {
         match self {
             RouteType::Stationary => MovementBehavior::Stationary,
             RouteType::Random { radius } => {
@@ -121,17 +124,31 @@ impl RouteType {
                     .map_or(Position::default(), |w| w.position);
                 MovementBehavior::Random {
                     origin,
-                    radius,
+                    radius: *radius,
                     current_target: None,
                 }
             }
-            RouteType::Patrol => MovementBehavior::Patrol {
+            RouteType::Loop => MovementBehavior::Loop {
                 waypoints,
                 current_index: 0,
             },
-            RouteType::PatrolDisappear => MovementBehavior::PatrolDisappear {
+            RouteType::WalkAndDespawn => MovementBehavior::WalkAndDespawn {
                 waypoints,
                 current_index: 0,
+            },
+            RouteType::WalkToEnd => MovementBehavior::WalkToEnd {
+                waypoints,
+                current_index: 0,
+            },
+            RouteType::PingPong => MovementBehavior::PingPong {
+                waypoints,
+                current_index: 0,
+                forward: true,
+            },
+            RouteType::PingPongDespawn => MovementBehavior::PingPongDespawn {
+                waypoints,
+                current_index: 0,
+                forward: true,
             },
         }
     }
@@ -144,6 +161,7 @@ pub struct WaypointConfig {
     pub wait_ticks: u32,
 }
 
+#[derive(Debug)]
 pub struct SpawnGroupConfig {
     pub leader_template: NpcMob,
     pub follower_template: Option<NpcMob>,
@@ -417,7 +435,7 @@ mod tests {
     }
 
     #[test]
-    fn route_type_to_behavior_patrol() {
+    fn route_type_to_behavior_loop() {
         let waypoints = vec![
             Waypoint {
                 position: pos(100, 100),
@@ -430,12 +448,96 @@ mod tests {
                 wait_ticks: 10,
             },
         ];
-        let behavior = RouteType::Patrol.to_behavior(waypoints.clone());
+        let behavior = RouteType::Loop.to_behavior(waypoints.clone());
         assert_eq!(
             behavior,
-            MovementBehavior::Patrol {
+            MovementBehavior::Loop {
                 waypoints,
                 current_index: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn route_type_to_behavior_walk_and_despawn() {
+        let waypoints = vec![Waypoint {
+            position: pos(100, 100),
+            range: 0,
+            wait_ticks: 0,
+        }];
+        let behavior = RouteType::WalkAndDespawn.to_behavior(waypoints.clone());
+        assert_eq!(
+            behavior,
+            MovementBehavior::WalkAndDespawn {
+                waypoints,
+                current_index: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn route_type_to_behavior_walk_to_end() {
+        let waypoints = vec![Waypoint {
+            position: pos(100, 100),
+            range: 0,
+            wait_ticks: 0,
+        }];
+        let behavior = RouteType::WalkToEnd.to_behavior(waypoints.clone());
+        assert_eq!(
+            behavior,
+            MovementBehavior::WalkToEnd {
+                waypoints,
+                current_index: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn route_type_to_behavior_ping_pong() {
+        let waypoints = vec![
+            Waypoint {
+                position: pos(100, 100),
+                range: 0,
+                wait_ticks: 0,
+            },
+            Waypoint {
+                position: pos(200, 200),
+                range: 0,
+                wait_ticks: 0,
+            },
+        ];
+        let behavior = RouteType::PingPong.to_behavior(waypoints.clone());
+        assert_eq!(
+            behavior,
+            MovementBehavior::PingPong {
+                waypoints,
+                current_index: 0,
+                forward: true,
+            }
+        );
+    }
+
+    #[test]
+    fn route_type_to_behavior_ping_pong_despawn() {
+        let waypoints = vec![
+            Waypoint {
+                position: pos(100, 100),
+                range: 0,
+                wait_ticks: 0,
+            },
+            Waypoint {
+                position: pos(200, 200),
+                range: 0,
+                wait_ticks: 0,
+            },
+        ];
+        let behavior = RouteType::PingPongDespawn.to_behavior(waypoints.clone());
+        assert_eq!(
+            behavior,
+            MovementBehavior::PingPongDespawn {
+                waypoints,
+                current_index: 0,
+                forward: true,
             }
         );
     }

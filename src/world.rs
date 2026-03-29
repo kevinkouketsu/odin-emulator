@@ -71,6 +71,14 @@ impl World {
         Ok(result)
     }
 
+    pub fn move_entity(
+        &mut self,
+        id: EntityId,
+        position: Position,
+    ) -> Result<MoveResult, MapError> {
+        self.map.move_entity(id, position)
+    }
+
     pub fn force_move_entity(
         &mut self,
         id: EntityId,

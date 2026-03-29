@@ -20,7 +20,7 @@ impl ActionBroadcastData {
     pub fn route_from_bytes(bytes: [u8; MAX_ROUTE]) -> [Option<Direction>; MAX_ROUTE] {
         let mut route = [None; MAX_ROUTE];
         for (i, &b) in bytes.iter().enumerate() {
-            if b >= b'1' && b <= b'9' {
+            if (b'1'..=b'9').contains(&b) {
                 route[i] = Direction::try_from(b - b'0').ok();
             }
         }

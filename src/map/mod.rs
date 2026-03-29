@@ -189,7 +189,14 @@ impl Map {
         (min_x, min_y, max_x, max_y)
     }
 
-    fn find_nearest_free(&self, center: Position) -> Option<Position> {
+    pub fn is_occupied_by_other(&self, pos: Position, exclude: EntityId) -> bool {
+        match self.grid.get(&(pos.x, pos.y)) {
+            Some(&occupant) => occupant != exclude,
+            None => false,
+        }
+    }
+
+    pub fn find_nearest_free(&self, center: Position) -> Option<Position> {
         for distance in 1..=SEARCH_RANGE {
             for dy in -distance..=distance {
                 for dx in -distance..=distance {
@@ -223,6 +230,10 @@ impl Map {
             Some(hm) => !hm.is_blocked(pos.x, pos.y),
             None => true,
         }
+    }
+
+    pub fn is_terrain_passable(&self, pos: Position) -> bool {
+        Self::is_in_bounds(pos) && self.is_walkable(pos)
     }
 
     pub fn can_step(&self, from: Position, to: Position) -> bool {
@@ -714,6 +725,37 @@ mod tests {
 
         map.remove(mob(1)).unwrap();
         assert_eq!(map.get_position(mob(1)), None);
+    }
+
+    #[test]
+    fn is_occupied_by_other_different_entity() {
+        let mut map = Map::new();
+        map.insert(player(1), pos(100, 100)).unwrap();
+        assert!(map.is_occupied_by_other(pos(100, 100), player(2)));
+    }
+
+    #[test]
+    fn is_occupied_by_other_self() {
+        let mut map = Map::new();
+        map.insert(player(1), pos(100, 100)).unwrap();
+        assert!(!map.is_occupied_by_other(pos(100, 100), player(1)));
+    }
+
+    #[test]
+    fn is_occupied_by_other_empty() {
+        let map = Map::new();
+        assert!(!map.is_occupied_by_other(pos(100, 100), player(1)));
+    }
+
+    #[test]
+    fn find_nearest_free_finds_adjacent() {
+        let mut map = Map::new();
+        map.insert(player(1), pos(100, 100)).unwrap();
+        let free = map.find_nearest_free(pos(100, 100)).unwrap();
+        assert_ne!(free, pos(100, 100));
+        let dx = (free.x as i32 - 100).abs();
+        let dy = (free.y as i32 - 100).abs();
+        assert!(dx <= 1 && dy <= 1);
     }
 
     #[test]

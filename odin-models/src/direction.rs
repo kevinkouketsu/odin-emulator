@@ -169,7 +169,7 @@ mod tests {
         for dir in Direction::ALL {
             let byte = dir.to_route_byte();
             assert!(
-                byte >= b'1' && byte <= b'9',
+                (b'1'..=b'9').contains(&byte),
                 "route byte must be ASCII digit"
             );
         }

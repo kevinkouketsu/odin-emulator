@@ -1,6 +1,9 @@
+pub mod loading;
+pub mod mob_id_allocator;
 pub mod movement;
 pub mod pathfinding;
 pub mod spawn_group;
+pub mod spawn_manager;
 pub mod tick;
 
 use crate::map::EntityId;

@@ -78,32 +78,38 @@ impl<const N: usize> TryFrom<String> for FixedSizeString<N> {
     type Error = FixedSizeStringError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        let len = value.len();
-        let cstr = CString::new(value).map_err(FixedSizeStringError::NulError)?;
-        if len >= N {
-            Err(FixedSizeStringError::InvalidSize(
-                cstr.into_string().unwrap(),
-                len,
-            ))
+        let truncated = if value.len() >= N {
+            log::warn!(
+                "Truncating string '{}' ({} bytes) to fit FixedSizeString<{}>",
+                value,
+                value.len(),
+                N
+            );
+            &value[..N - 1]
         } else {
-            Ok(FixedSizeString { str: cstr })
-        }
+            &value
+        };
+        let cstr = CString::new(truncated).map_err(FixedSizeStringError::NulError)?;
+        Ok(FixedSizeString { str: cstr })
     }
 }
 impl<const N: usize> TryFrom<&str> for FixedSizeString<N> {
     type Error = FixedSizeStringError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let len = value.len();
-        let cstr = CString::new(value).map_err(FixedSizeStringError::NulError)?;
-        if len >= N {
-            Err(FixedSizeStringError::InvalidSize(
-                cstr.into_string().unwrap(),
-                len,
-            ))
+        let truncated = if value.len() >= N {
+            log::warn!(
+                "Truncating string '{}' ({} bytes) to fit FixedSizeString<{}>",
+                value,
+                value.len(),
+                N
+            );
+            &value[..N - 1]
         } else {
-            Ok(FixedSizeString { str: cstr })
-        }
+            value
+        };
+        let cstr = CString::new(truncated).map_err(FixedSizeStringError::NulError)?;
+        Ok(FixedSizeString { str: cstr })
     }
 }
 
@@ -139,12 +145,11 @@ mod tests {
     }
 
     #[test]
-    fn requires_space_for_null_terminator() {
+    fn truncates_when_no_space_for_null_terminator() {
         let result = FixedSizeString::<5>::try_from("hello".to_string());
-        assert!(matches!(
-            result,
-            Err(FixedSizeStringError::InvalidSize(_, 5))
-        ));
+        assert!(result.is_ok());
+        let fixed = result.unwrap();
+        assert_eq!(fixed.str.to_str().unwrap(), "hell");
     }
 
     #[test]
@@ -186,8 +191,25 @@ mod tests {
     }
 
     #[test]
-    fn validates_size_during_conversion() {
-        let str = "bigger than two bytes".to_string();
-        assert!(FixedSizeString::<2>::try_from(str).is_err());
+    fn truncates_long_string_during_conversion() {
+        let result = FixedSizeString::<2>::try_from("bigger than two bytes".to_string());
+        assert!(result.is_ok());
+        let fixed = result.unwrap();
+        assert_eq!(fixed.str.to_str().unwrap(), "b");
+    }
+
+    #[test]
+    fn truncates_string_exceeding_fixed_size() {
+        let result = FixedSizeString::<16>::try_from("Skeleton Warrior".to_string());
+        assert!(result.is_ok());
+        let fixed = result.unwrap();
+        assert_eq!(fixed.str.to_str().unwrap(), "Skeleton Warrio");
+    }
+
+    #[test]
+    fn truncates_and_encodes_correctly() {
+        let fixed: FixedSizeString<8> = "longername".to_string().try_into().unwrap();
+        let encoded: Vec<u8> = fixed.try_into().unwrap();
+        assert_eq!(encoded, b"longern\0");
     }
 }
