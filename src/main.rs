@@ -154,7 +154,7 @@ async fn main() {
                 for id in despawned {
                     spawn_manager.release_mob_id(id);
                 }
-                spawn_manager.tick(&mut world, &context);let elapsed = start.elapsed();
+                spawn_manager.tick(&mut world, &context);
             }
             Ok((stream, addr)) = listener.accept() => {
                 let client_id = match context.allocate_client_id() {
