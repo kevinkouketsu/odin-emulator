@@ -29,6 +29,9 @@ thiserror = "1.0.50"
 toml = "0.8"
 tokio = { version = "1.41.0", features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "sync"] }
 
+[profile.dev]
+opt-level = 1
+
 [dev-dependencies]
 odin-database = { path = "./odin-database", features = ["sqlite"] }
 rstest = { version = "0.23.0" }
