@@ -1,6 +1,9 @@
+use crate::map::spatial_grid::SpatialGrid;
 use odin_models::height_map::HeightMap;
 use odin_models::position::Position;
 use std::collections::HashMap;
+
+mod spatial_grid;
 
 const MAP_SIZE: u16 = 4096;
 const HALF_VIEWPORT_X: u16 = 16;
@@ -8,7 +11,7 @@ const HALF_VIEWPORT_Y: u16 = 16;
 const SEARCH_RANGE: i32 = 5;
 
 pub struct Map {
-    grid: HashMap<(u16, u16), EntityId>,
+    spatial: SpatialGrid,
     positions: HashMap<EntityId, Position>,
     height_map: Option<HeightMap>,
 }
@@ -16,7 +19,7 @@ pub struct Map {
 impl Map {
     pub fn new() -> Self {
         Self {
-            grid: HashMap::new(),
+            spatial: SpatialGrid::new(),
             positions: HashMap::new(),
             height_map: None,
         }
@@ -24,7 +27,7 @@ impl Map {
 
     pub fn with_height_map(height_map: HeightMap) -> Self {
         Self {
-            grid: HashMap::new(),
+            spatial: SpatialGrid::new(),
             positions: HashMap::new(),
             height_map: Some(height_map),
         }
@@ -37,11 +40,11 @@ impl Map {
         if self.positions.contains_key(&id) {
             return Err(MapError::AlreadyInserted);
         }
-        if self.grid.contains_key(&(pos.x, pos.y)) {
+        if self.spatial.is_occupied(pos.x, pos.y).is_some() {
             return Err(MapError::Occupied);
         }
 
-        self.grid.insert((pos.x, pos.y), id);
+        self.spatial.insert(id, pos.x, pos.y);
         self.positions.insert(id, pos);
 
         let spectators = self.get_spectators(pos, id);
@@ -67,7 +70,7 @@ impl Map {
             return Err(MapError::AlreadyInserted);
         }
 
-        if !self.grid.contains_key(&(pos.x, pos.y)) && self.is_walkable(pos) {
+        if self.spatial.is_occupied(pos.x, pos.y).is_none() && self.is_walkable(pos) {
             return self.insert(id, pos);
         }
 
@@ -75,12 +78,12 @@ impl Map {
             return self.insert(id, free_pos);
         }
 
-        Err(MapError::NoFreePosition)
+        Err(MapError::NoFreePosition(pos))
     }
 
     pub fn remove(&mut self, id: EntityId) -> Result<RemoveResult, MapError> {
         let pos = self.positions.remove(&id).ok_or(MapError::EntityNotFound)?;
-        self.grid.remove(&(pos.x, pos.y));
+        self.spatial.remove(id, pos.x, pos.y);
         let spectators = self.get_spectators(pos, id);
         Ok(RemoveResult {
             position: pos,
@@ -97,7 +100,7 @@ impl Map {
             Err(MapError::Occupied) => {
                 let free = self
                     .find_nearest_free(pos)
-                    .ok_or(MapError::NoFreePosition)?;
+                    .ok_or(MapError::NoFreePosition(pos))?;
                 self.move_entity(id, free)
             }
             other => other,
@@ -111,7 +114,7 @@ impl Map {
 
         let old_pos = *self.positions.get(&id).ok_or(MapError::EntityNotFound)?;
 
-        if let Some(&occupant) = self.grid.get(&(new_pos.x, new_pos.y))
+        if let Some(occupant) = self.spatial.is_occupied(new_pos.x, new_pos.y)
             && occupant != id
         {
             return Err(MapError::Occupied);
@@ -130,8 +133,8 @@ impl Map {
 
         let old_entities = self.get_spectators(old_pos, id);
 
-        self.grid.remove(&(old_pos.x, old_pos.y));
-        self.grid.insert((new_pos.x, new_pos.y), id);
+        self.spatial
+            .move_entity(id, old_pos.x, old_pos.y, new_pos.x, new_pos.y);
         self.positions.insert(id, new_pos);
 
         let new_entities = self.get_spectators(new_pos, id);
@@ -164,17 +167,8 @@ impl Map {
 
     pub fn get_spectators(&self, center: Position, exclude: EntityId) -> Vec<EntityId> {
         let (min_x, min_y, max_x, max_y) = Self::viewport_bounds(center);
-        let mut result = Vec::new();
-        for y in min_y..=max_y {
-            for x in min_x..=max_x {
-                if let Some(&id) = self.grid.get(&(x, y))
-                    && id != exclude
-                {
-                    result.push(id);
-                }
-            }
-        }
-        result
+        self.spatial
+            .get_spectators(min_x, min_y, max_x, max_y, exclude)
     }
 
     pub fn get_position(&self, id: EntityId) -> Option<Position> {
@@ -190,8 +184,8 @@ impl Map {
     }
 
     pub fn is_occupied_by_other(&self, pos: Position, exclude: EntityId) -> bool {
-        match self.grid.get(&(pos.x, pos.y)) {
-            Some(&occupant) => occupant != exclude,
+        match self.spatial.is_occupied(pos.x, pos.y) {
+            Some(occupant) => occupant != exclude,
             None => false,
         }
     }
@@ -212,7 +206,7 @@ impl Map {
                         x: nx as u16,
                         y: ny as u16,
                     };
-                    if !self.grid.contains_key(&(pos.x, pos.y)) && self.is_walkable(pos) {
+                    if self.spatial.is_occupied(pos.x, pos.y).is_none() && self.is_walkable(pos) {
                         return Some(pos);
                     }
                 }
@@ -240,7 +234,7 @@ impl Map {
         if !Self::is_in_bounds(to) {
             return false;
         }
-        if self.grid.contains_key(&(to.x, to.y)) {
+        if self.spatial.is_occupied(to.x, to.y).is_some() {
             return false;
         }
         match &self.height_map {
@@ -279,8 +273,8 @@ pub enum MapError {
     EntityNotFound,
     #[error("Entity is already on the map")]
     AlreadyInserted,
-    #[error("No free position found nearby")]
-    NoFreePosition,
+    #[error("No free position found nearby {0}")]
+    NoFreePosition(Position),
 }
 
 #[derive(Debug, PartialEq)]
@@ -428,7 +422,7 @@ mod tests {
         }
         assert_eq!(
             map.force_insert(player(id), center),
-            Err(MapError::NoFreePosition)
+            Err(MapError::NoFreePosition(center))
         );
     }
 
@@ -705,7 +699,7 @@ mod tests {
         }
         assert_eq!(
             map.force_move_entity(player(1), center),
-            Err(MapError::NoFreePosition)
+            Err(MapError::NoFreePosition(center))
         );
     }
 
