@@ -1,4 +1,4 @@
-use crate::npc::spawn_group::{Formation, RouteType, SpawnGroupConfig, WaypointConfig};
+use crate::npc::spawn_group::{Formation, RouteType, SpawnGroupConfig, SpawnGroupId, SpawnMode, WaypointConfig};
 use odin_models::character::Class;
 use odin_models::item::{Item, ItemBonusEffect};
 use odin_models::npc_mob::NpcMob;
@@ -26,6 +26,8 @@ pub enum LoadError {
     InvalidRouteType(String),
     #[error("Invalid formation: {0}")]
     InvalidFormation(String),
+    #[error("Invalid spawn mode: {0}")]
+    InvalidSpawnMode(String),
     #[error("Template not found: {0}")]
     TemplateNotFound(String),
     #[error("Too many item effects (max {max}): got {got}")]
@@ -187,6 +189,8 @@ pub struct SpawnFileToml {
 
 #[derive(Deserialize)]
 pub struct SpawnGroupToml {
+    #[serde(default)]
+    pub id: Option<SpawnGroupIdToml>,
     pub leader: String,
     #[serde(default)]
     pub follower: Option<String>,
@@ -197,7 +201,7 @@ pub struct SpawnGroupToml {
     #[serde(default = "default_max_alive")]
     pub max_alive: u32,
     #[serde(default)]
-    pub respawn_ticks: u32,
+    pub spawn_mode: Option<SpawnModeToml>,
     pub route_type: RouteTypeToml,
     #[serde(default)]
     pub formation: Option<String>,
@@ -207,6 +211,25 @@ pub struct SpawnGroupToml {
 
 fn default_max_alive() -> u32 {
     1
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum SpawnModeToml {
+    Simple(String),
+    Auto { auto: AutoSpawnConfig },
+}
+
+#[derive(Deserialize)]
+pub struct AutoSpawnConfig {
+    pub respawn_ticks: u32,
+}
+
+#[derive(Deserialize)]
+pub struct SpawnGroupIdToml {
+    pub name: String,
+    #[serde(default)]
+    pub index: Option<u32>,
 }
 
 impl SpawnGroupToml {
@@ -245,7 +268,24 @@ impl SpawnGroupToml {
             })
             .collect();
 
+        let spawn_mode = match self.spawn_mode {
+            None => SpawnMode::Manual,
+            Some(SpawnModeToml::Simple(s)) if s == "manual" => SpawnMode::Manual,
+            Some(SpawnModeToml::Simple(s)) => {
+                return Err(LoadError::InvalidSpawnMode(s));
+            }
+            Some(SpawnModeToml::Auto { auto }) => SpawnMode::Auto {
+                respawn_ticks: auto.respawn_ticks,
+            },
+        };
+
+        let id = self.id.map(|id_toml| SpawnGroupId {
+            name: id_toml.name,
+            index: id_toml.index,
+        });
+
         Ok(SpawnGroupConfig {
+            id,
             leader_template,
             follower_template,
             min_group: self.min_group,
@@ -253,7 +293,7 @@ impl SpawnGroupToml {
             formation,
             route_type,
             waypoints,
-            respawn_ticks: self.respawn_ticks,
+            spawn_mode,
             max_alive: self.max_alive,
         })
     }
@@ -643,9 +683,14 @@ mod tests {
             min_group = 3
             max_group = 5
             max_alive = 5
-            respawn_ticks = 120
             route_type = "ping_pong"
             formation = "line"
+
+            [group.id]
+            name = "boss"
+
+            [group.spawn_mode.auto]
+            respawn_ticks = 120
 
             [[group.waypoints]]
             x = 3414
@@ -685,7 +730,19 @@ mod tests {
         assert_eq!(config.min_group, 3);
         assert_eq!(config.max_group, 5);
         assert_eq!(config.max_alive, 5);
-        assert_eq!(config.respawn_ticks, 120);
+        assert_eq!(
+            config.spawn_mode,
+            SpawnMode::Auto {
+                respawn_ticks: 120
+            }
+        );
+        assert_eq!(
+            config.id,
+            Some(SpawnGroupId {
+                name: "boss".to_string(),
+                index: None,
+            })
+        );
         assert_eq!(config.route_type, RouteType::PingPong);
         assert_eq!(config.formation, Formation::Line);
         assert_eq!(config.waypoints.len(), 2);
@@ -749,7 +806,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_spawn_group_defaults() {
+    fn parse_spawn_group_defaults_to_manual() {
         let toml_str = r#"
             [[group]]
             leader = "Mob"
@@ -761,7 +818,8 @@ mod tests {
         assert_eq!(group.min_group, 0);
         assert_eq!(group.max_group, 0);
         assert_eq!(group.max_alive, 1);
-        assert_eq!(group.respawn_ticks, 0);
+        assert!(group.spawn_mode.is_none());
+        assert!(group.id.is_none());
         assert!(group.formation.is_none());
         assert!(group.waypoints.is_empty());
 
@@ -774,8 +832,61 @@ mod tests {
             .unwrap()
             .into_config(&templates)
             .unwrap();
+        assert_eq!(config.spawn_mode, SpawnMode::Manual);
+        assert!(config.id.is_none());
         assert_eq!(config.formation, Formation::None);
         assert_eq!(config.max_alive, 1);
         assert!(config.follower_template.is_none());
+    }
+
+    #[test]
+    fn parse_spawn_mode_manual_string() {
+        let toml_str = r#"
+            [[group]]
+            leader = "Mob"
+            route_type = "stationary"
+            spawn_mode = "manual"
+        "#;
+        let spawn_file: SpawnFileToml = toml::from_str(toml_str).unwrap();
+        let mut templates = HashMap::new();
+        templates.insert("Mob".to_string(), NpcMob::default());
+        let config = spawn_file
+            .group
+            .into_iter()
+            .next()
+            .unwrap()
+            .into_config(&templates)
+            .unwrap();
+        assert_eq!(config.spawn_mode, SpawnMode::Manual);
+    }
+
+    #[test]
+    fn parse_spawn_group_id_with_index() {
+        let toml_str = r#"
+            [[group]]
+            leader = "Mob"
+            route_type = "stationary"
+
+            [group.id]
+            name = "hell"
+            index = 5
+        "#;
+        let spawn_file: SpawnFileToml = toml::from_str(toml_str).unwrap();
+        let mut templates = HashMap::new();
+        templates.insert("Mob".to_string(), NpcMob::default());
+        let config = spawn_file
+            .group
+            .into_iter()
+            .next()
+            .unwrap()
+            .into_config(&templates)
+            .unwrap();
+        assert_eq!(
+            config.id,
+            Some(SpawnGroupId {
+                name: "hell".to_string(),
+                index: Some(5),
+            })
+        );
     }
 }

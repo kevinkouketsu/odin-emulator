@@ -13,6 +13,7 @@ use odin_models::EquipmentSlots;
 use odin_models::character::{Class, GuildLevel};
 use odin_models::npc_mob::NpcMob;
 use odin_models::status::Score;
+use spawn_group::SpawnGroupId;
 
 pub struct Npc {
     pub entity_id: EntityId,
@@ -20,6 +21,7 @@ pub struct Npc {
     pub movement: MovementState,
     pub computed: ComputedScore,
     pub group_id: Option<usize>,
+    pub spawn_group_id: Option<SpawnGroupId>,
     pub is_leader: bool,
     pub leader: Option<EntityId>,
 }
@@ -36,6 +38,7 @@ impl Npc {
             movement,
             computed,
             group_id: None,
+            spawn_group_id: None,
             is_leader: false,
             leader: None,
         }

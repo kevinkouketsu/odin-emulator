@@ -7,6 +7,18 @@ use rand::Rng;
 pub const MAX_FOLLOWERS: usize = 12;
 pub const MAX_WAYPOINTS: usize = 5;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpawnMode {
+    Auto { respawn_ticks: u32 },
+    Manual,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpawnGroupId {
+    pub name: String,
+    pub index: Option<u32>,
+}
+
 const FORMATION_NONE: [(i8, i8); MAX_FOLLOWERS] = [
     (0, 0),
     (0, 0),
@@ -163,6 +175,7 @@ pub struct WaypointConfig {
 
 #[derive(Debug)]
 pub struct SpawnGroupConfig {
+    pub id: Option<SpawnGroupId>,
     pub leader_template: NpcMob,
     pub follower_template: Option<NpcMob>,
     pub min_group: u32,
@@ -170,7 +183,7 @@ pub struct SpawnGroupConfig {
     pub formation: Formation,
     pub route_type: RouteType,
     pub waypoints: Vec<WaypointConfig>,
-    pub respawn_ticks: u32,
+    pub spawn_mode: SpawnMode,
     pub max_alive: u32,
 }
 
@@ -182,7 +195,10 @@ pub struct SpawnGroup {
 
 impl SpawnGroup {
     pub fn new(config: SpawnGroupConfig) -> Self {
-        let respawn_countdown = config.respawn_ticks;
+        let respawn_countdown = match &config.spawn_mode {
+            SpawnMode::Auto { respawn_ticks } => *respawn_ticks,
+            SpawnMode::Manual => 0,
+        };
         Self {
             config,
             active_npcs: Vec::new(),
@@ -191,6 +207,9 @@ impl SpawnGroup {
     }
 
     pub fn needs_spawn(&self) -> bool {
+        if matches!(self.config.spawn_mode, SpawnMode::Manual) {
+            return false;
+        }
         (self.active_npcs.len() as u32) < self.config.max_alive && self.respawn_countdown == 0
     }
 
@@ -258,6 +277,7 @@ mod tests {
 
     fn default_config() -> SpawnGroupConfig {
         SpawnGroupConfig {
+            id: None,
             leader_template: NpcMob::default(),
             follower_template: None,
             min_group: 0,
@@ -265,7 +285,7 @@ mod tests {
             formation: Formation::None,
             route_type: RouteType::Stationary,
             waypoints: Vec::new(),
-            respawn_ticks: 0,
+            spawn_mode: SpawnMode::Auto { respawn_ticks: 0 },
             max_alive: 1,
         }
     }
@@ -326,7 +346,6 @@ mod tests {
     fn needs_spawn_when_all_dead() {
         let group = SpawnGroup::new(SpawnGroupConfig {
             max_alive: 3,
-            respawn_ticks: 0,
             ..default_config()
         });
         assert!(group.needs_spawn());
@@ -336,7 +355,6 @@ mod tests {
     fn needs_spawn_at_max() {
         let mut group = SpawnGroup::new(SpawnGroupConfig {
             max_alive: 2,
-            respawn_ticks: 0,
             ..default_config()
         });
         group.active_npcs.push(EntityId::Mob(0));
@@ -348,7 +366,17 @@ mod tests {
     fn needs_spawn_countdown_not_ready() {
         let group = SpawnGroup::new(SpawnGroupConfig {
             max_alive: 5,
-            respawn_ticks: 10,
+            spawn_mode: SpawnMode::Auto { respawn_ticks: 10 },
+            ..default_config()
+        });
+        assert!(!group.needs_spawn());
+    }
+
+    #[test]
+    fn needs_spawn_manual_always_false() {
+        let group = SpawnGroup::new(SpawnGroupConfig {
+            max_alive: 5,
+            spawn_mode: SpawnMode::Manual,
             ..default_config()
         });
         assert!(!group.needs_spawn());
@@ -357,7 +385,7 @@ mod tests {
     #[test]
     fn tick_respawn_decrements() {
         let mut group = SpawnGroup::new(SpawnGroupConfig {
-            respawn_ticks: 3,
+            spawn_mode: SpawnMode::Auto { respawn_ticks: 3 },
             ..default_config()
         });
         assert_eq!(group.respawn_countdown, 3);

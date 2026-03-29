@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+
 use crate::map::EntityId;
 use crate::npc::Npc;
 use crate::npc::mob_id_allocator::MobIdAllocator;
 use crate::npc::movement::MovementState;
-use crate::npc::spawn_group::{SpawnGroup, SpawnGroupConfig};
+use crate::npc::spawn_group::{SpawnGroup, SpawnGroupConfig, SpawnMode};
 use crate::packets::ToCreateMob;
 use crate::session::PacketSender;
 use crate::world::World;
@@ -11,19 +13,28 @@ use rand::Rng;
 pub struct SpawnManager {
     groups: Vec<SpawnGroup>,
     mob_id_allocator: MobIdAllocator,
+    name_index: HashMap<String, Vec<usize>>,
 }
 
 impl SpawnManager {
     pub fn new(configs: Vec<SpawnGroupConfig>) -> Self {
+        let name_index = Self::build_name_index(&configs);
         let groups = configs.into_iter().map(SpawnGroup::new).collect();
         Self {
             groups,
             mob_id_allocator: MobIdAllocator::new(),
+            name_index,
         }
     }
 
     pub fn initial_spawn<P: PacketSender>(&mut self, world: &mut World, sender: &P) {
         for group_index in 0..self.groups.len() {
+            if matches!(
+                self.groups[group_index].config.spawn_mode,
+                SpawnMode::Manual
+            ) {
+                continue;
+            }
             while (self.groups[group_index].active_npcs.len() as u32)
                 < self.groups[group_index].config.max_alive
             {
@@ -35,7 +46,9 @@ impl SpawnManager {
     pub fn tick<P: PacketSender>(&mut self, world: &mut World, sender: &P) {
         for group in &mut self.groups {
             group.active_npcs.retain(|id| world.entity_exists(*id));
-            group.tick_respawn();
+            if !matches!(group.config.spawn_mode, SpawnMode::Manual) {
+                group.tick_respawn();
+            }
         }
 
         let indices: Vec<usize> = self
@@ -51,7 +64,74 @@ impl SpawnManager {
     }
 
     pub fn reload(&mut self, configs: Vec<SpawnGroupConfig>) {
+        self.name_index = Self::build_name_index(&configs);
         self.groups = configs.into_iter().map(SpawnGroup::new).collect();
+    }
+
+    pub fn spawn_by_id<P: PacketSender>(&mut self, name: &str, world: &mut World, sender: &P) {
+        let Some(indices) = self.name_index.get(name) else {
+            return;
+        };
+        let indices = indices.clone();
+        for group_index in indices {
+            self.spawn_group(group_index, world, sender);
+        }
+    }
+
+    pub fn spawn_by_id_index<P: PacketSender>(
+        &mut self,
+        name: &str,
+        index: u32,
+        world: &mut World,
+        sender: &P,
+    ) {
+        let Some(indices) = self.name_index.get(name) else {
+            return;
+        };
+        for &group_index in indices {
+            if let Some(ref id) = self.groups[group_index].config.id
+                && id.index == Some(index)
+            {
+                self.spawn_group(group_index, world, sender);
+                return;
+            }
+        }
+    }
+
+    pub fn is_alive(&self, name: &str) -> bool {
+        let Some(indices) = self.name_index.get(name) else {
+            return false;
+        };
+        indices
+            .iter()
+            .any(|&i| !self.groups[i].active_npcs.is_empty())
+    }
+
+    pub fn is_group_alive(&self, name: &str, index: u32) -> bool {
+        let Some(indices) = self.name_index.get(name) else {
+            return false;
+        };
+        indices.iter().any(|&i| {
+            self.groups[i]
+                .config
+                .id
+                .as_ref()
+                .is_some_and(|id| id.index == Some(index))
+                && !self.groups[i].active_npcs.is_empty()
+        })
+    }
+
+    fn build_name_index(configs: &[SpawnGroupConfig]) -> HashMap<String, Vec<usize>> {
+        let mut index = HashMap::new();
+        for (i, config) in configs.iter().enumerate() {
+            if let Some(ref id) = config.id {
+                index
+                    .entry(id.name.clone())
+                    .or_insert_with(Vec::new)
+                    .push(i);
+            }
+        }
+        index
     }
 
     pub fn release_mob_id(&mut self, id: usize) {
@@ -72,7 +152,11 @@ impl SpawnManager {
         let min_group = config.min_group;
         let max_group = config.max_group;
         let speed = leader_template.score.attack_run as u8;
-        let respawn_ticks = config.respawn_ticks;
+        let spawn_group_id = config.id.clone();
+        let respawn_ticks = match config.spawn_mode {
+            SpawnMode::Auto { respawn_ticks } => respawn_ticks,
+            SpawnMode::Manual => 0,
+        };
 
         let leader_waypoints = self.groups[group_index].resolve_waypoints(&mut rng);
 
@@ -84,6 +168,7 @@ impl SpawnManager {
         let movement = MovementState::new(behavior, speed);
         let mut npc = Npc::new(entity_id, leader_template.clone(), movement);
         npc.group_id = Some(group_index);
+        npc.spawn_group_id = spawn_group_id.clone();
         npc.is_leader = true;
 
         let spawn_pos = leader_waypoints
@@ -133,6 +218,7 @@ impl SpawnManager {
                 let f_movement = MovementState::new(f_behavior, follower_speed);
                 let mut f_npc = Npc::new(f_entity_id, follower_tmpl.clone(), f_movement);
                 f_npc.group_id = Some(group_index);
+                f_npc.spawn_group_id = spawn_group_id.clone();
                 f_npc.is_leader = false;
                 f_npc.leader = Some(entity_id);
 
@@ -164,12 +250,13 @@ impl SpawnManager {
 mod tests {
     use super::*;
     use crate::handlers::tests::MockPacketSender;
-    use crate::npc::spawn_group::{Formation, RouteType, WaypointConfig};
+    use crate::npc::spawn_group::{Formation, RouteType, SpawnGroupId, WaypointConfig};
     use odin_models::npc_mob::NpcMob;
     use odin_models::position::Position;
 
     fn simple_config(max_alive: u32, respawn_ticks: u32) -> SpawnGroupConfig {
         SpawnGroupConfig {
+            id: None,
             leader_template: NpcMob {
                 name: "TestMob".to_string(),
                 ..Default::default()
@@ -184,7 +271,7 @@ mod tests {
                 range: 0,
                 wait_ticks: 0,
             }],
-            respawn_ticks,
+            spawn_mode: SpawnMode::Auto { respawn_ticks },
             max_alive,
         }
     }
@@ -373,5 +460,179 @@ mod tests {
 
         assert_eq!(world.npc_ids().len(), 1);
         assert_eq!(manager.groups[0].active_npcs.len(), 1);
+    }
+
+    #[test]
+    fn manual_groups_skipped_in_initial_spawn() {
+        let mut world = World::default();
+        let sender = MockPacketSender::default();
+
+        let mut config = simple_config(3, 0);
+        config.spawn_mode = SpawnMode::Manual;
+        let mut manager = SpawnManager::new(vec![config]);
+
+        manager.initial_spawn(&mut world, &sender);
+
+        assert_eq!(world.npc_ids().len(), 0);
+        assert!(manager.groups[0].active_npcs.is_empty());
+    }
+
+    #[test]
+    fn manual_groups_skipped_in_tick() {
+        let mut world = World::default();
+        let sender = MockPacketSender::default();
+
+        let mut config = simple_config(3, 0);
+        config.spawn_mode = SpawnMode::Manual;
+        let mut manager = SpawnManager::new(vec![config]);
+
+        manager.tick(&mut world, &sender);
+        manager.tick(&mut world, &sender);
+
+        assert_eq!(world.npc_ids().len(), 0);
+    }
+
+    #[test]
+    fn spawn_by_id_spawns_named_group() {
+        let mut world = World::default();
+        let sender = MockPacketSender::default();
+
+        let mut config = simple_config(1, 0);
+        config.spawn_mode = SpawnMode::Manual;
+        config.id = Some(SpawnGroupId {
+            name: "torre_rvr_blue".to_string(),
+            index: None,
+        });
+        let mut manager = SpawnManager::new(vec![config]);
+
+        assert_eq!(world.npc_ids().len(), 0);
+        manager.spawn_by_id("torre_rvr_blue", &mut world, &sender);
+        assert_eq!(world.npc_ids().len(), 1);
+    }
+
+    #[test]
+    fn spawn_by_id_index_spawns_specific_group() {
+        let mut world = World::default();
+        let sender = MockPacketSender::default();
+
+        let mut config0 = simple_config(1, 0);
+        config0.spawn_mode = SpawnMode::Manual;
+        config0.id = Some(SpawnGroupId {
+            name: "hell".to_string(),
+            index: Some(0),
+        });
+        let mut config1 = simple_config(1, 0);
+        config1.spawn_mode = SpawnMode::Manual;
+        config1.id = Some(SpawnGroupId {
+            name: "hell".to_string(),
+            index: Some(1),
+        });
+        let mut manager = SpawnManager::new(vec![config0, config1]);
+
+        manager.spawn_by_id_index("hell", 1, &mut world, &sender);
+        assert_eq!(world.npc_ids().len(), 1);
+        assert!(manager.groups[0].active_npcs.is_empty());
+        assert_eq!(manager.groups[1].active_npcs.len(), 1);
+    }
+
+    #[test]
+    fn is_alive_checks_named_groups() {
+        let mut world = World::default();
+        let sender = MockPacketSender::default();
+
+        let mut config = simple_config(1, 0);
+        config.spawn_mode = SpawnMode::Manual;
+        config.id = Some(SpawnGroupId {
+            name: "boss".to_string(),
+            index: None,
+        });
+        let mut manager = SpawnManager::new(vec![config]);
+
+        assert!(!manager.is_alive("boss"));
+
+        manager.spawn_by_id("boss", &mut world, &sender);
+        assert!(manager.is_alive("boss"));
+
+        let npc_id = manager.groups[0].active_npcs[0];
+        world.remove_entity(npc_id).unwrap();
+        manager.tick(&mut world, &sender);
+        assert!(!manager.is_alive("boss"));
+    }
+
+    #[test]
+    fn is_group_alive_checks_indexed_group() {
+        let mut world = World::default();
+        let sender = MockPacketSender::default();
+
+        let mut config0 = simple_config(1, 0);
+        config0.spawn_mode = SpawnMode::Manual;
+        config0.id = Some(SpawnGroupId {
+            name: "hell".to_string(),
+            index: Some(0),
+        });
+        let mut config1 = simple_config(1, 0);
+        config1.spawn_mode = SpawnMode::Manual;
+        config1.id = Some(SpawnGroupId {
+            name: "hell".to_string(),
+            index: Some(1),
+        });
+        let mut manager = SpawnManager::new(vec![config0, config1]);
+
+        manager.spawn_by_id("hell", &mut world, &sender);
+        assert!(manager.is_group_alive("hell", 0));
+        assert!(manager.is_group_alive("hell", 1));
+
+        let npc_id = manager.groups[0].active_npcs[0];
+        world.remove_entity(npc_id).unwrap();
+        manager.tick(&mut world, &sender);
+        assert!(!manager.is_group_alive("hell", 0));
+        assert!(manager.is_group_alive("hell", 1));
+    }
+
+    #[test]
+    fn spawn_group_id_cloned_onto_npc() {
+        let mut world = World::default();
+        let sender = MockPacketSender::default();
+
+        let mut config = simple_config(1, 0);
+        config.spawn_mode = SpawnMode::Manual;
+        config.id = Some(SpawnGroupId {
+            name: "torre_rvr_blue".to_string(),
+            index: None,
+        });
+        let mut manager = SpawnManager::new(vec![config]);
+
+        manager.spawn_by_id("torre_rvr_blue", &mut world, &sender);
+        let npc_id = manager.groups[0].active_npcs[0];
+        let npc = world.get_npc(npc_id).unwrap();
+        assert_eq!(
+            npc.spawn_group_id,
+            Some(SpawnGroupId {
+                name: "torre_rvr_blue".to_string(),
+                index: None,
+            })
+        );
+    }
+
+    #[test]
+    fn reload_rebuilds_name_index() {
+        let mut config = simple_config(1, 0);
+        config.spawn_mode = SpawnMode::Manual;
+        config.id = Some(SpawnGroupId {
+            name: "old_boss".to_string(),
+            index: None,
+        });
+        let mut manager = SpawnManager::new(vec![config]);
+        assert!(manager.name_index.contains_key("old_boss"));
+
+        let mut new_config = simple_config(1, 0);
+        new_config.spawn_mode = SpawnMode::Manual;
+        new_config.id = Some(SpawnGroupId {
+            name: "new_boss".to_string(),
+            index: None,
+        });
+        manager.reload(vec![new_config]);
+        assert!(!manager.name_index.contains_key("old_boss"));
+        assert!(manager.name_index.contains_key("new_boss"));
     }
 }
